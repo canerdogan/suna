@@ -16,12 +16,54 @@ import json
 import asyncio
 from openai import OpenAIError
 import litellm
-from litellm.files.main import ModelResponse
+from litellm.integrations.custom_logger import CustomLogger
 from utils.logger import logger
 from utils.config import config
 
-# litellm.set_verbose=True
-litellm.modify_params=True
+# Configure LiteLLM logging properly
+class StructlogLiteLLMHandler(CustomLogger):
+    """Custom LiteLLM logger that integrates with our structlog setup."""
+    
+    def log_pre_api_call(self, model, messages, kwargs):
+        """Log before API call."""
+        logger.debug("LiteLLM pre-api call", model=model, call_id=kwargs.get("litellm_call_id"))
+    
+    def log_success_event(self, kwargs, response_obj, start_time, end_time):
+        """Log successful API calls."""
+        duration = (end_time - start_time).total_seconds()
+        cost = kwargs.get("response_cost", 0.0)
+        usage = getattr(response_obj, "usage", {})
+        
+        logger.info("LiteLLM API call successful",
+                   call_id=kwargs.get("litellm_call_id"),
+                   model=kwargs.get("model"),
+                   actual_model=getattr(response_obj, "model", "unknown"),
+                   duration_sec=duration,
+                   cost=cost,
+                   prompt_tokens=usage.get("prompt_tokens", 0) if usage else 0,
+                   completion_tokens=usage.get("completion_tokens", 0) if usage else 0,
+                   total_tokens=usage.get("total_tokens", 0) if usage else 0,
+                   user=kwargs.get("user"))
+    
+    def log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        """Log failed API calls."""
+        duration = (end_time - start_time).total_seconds()
+        exception = kwargs.get("exception")
+        
+        logger.error("LiteLLM API call failed",
+                    call_id=kwargs.get("litellm_call_id"),
+                    model=kwargs.get("model"),
+                    duration_sec=duration,
+                    error_type=type(exception).__name__ if exception else "Unknown",
+                    error_message=str(exception) if exception else "Unknown error",
+                    user=kwargs.get("user"))
+
+# Initialize the custom handler
+_llm_logger = StructlogLiteLLMHandler()
+litellm.callbacks = [_llm_logger]
+
+# Set reasonable logging level instead of debug mode
+litellm.modify_params = True
 
 # Constants
 MAX_RETRIES = 2
@@ -38,11 +80,13 @@ class LLMRetryError(LLMError):
 
 def setup_api_keys() -> None:
     """Set up API keys from environment variables."""
-    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER', 'XAI']
+    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER', 'XAI', 'GEMINI']
     for provider in providers:
         key = getattr(config, f'{provider}_API_KEY')
         if key:
             logger.debug(f"API key set for provider: {provider}")
+            # Set the API key in the environment for LiteLLM
+            os.environ[f"{provider}_API_KEY"] = key
         else:
             logger.warning(f"No API key found for provider: {provider}")
 
@@ -64,6 +108,12 @@ def setup_api_keys() -> None:
         os.environ['AWS_REGION_NAME'] = aws_region
     else:
         logger.warning(f"Missing AWS credentials for Bedrock integration - access_key: {bool(aws_access_key)}, secret_key: {bool(aws_secret_key)}, region: {aws_region}")
+    
+    # Set up Google API key for Gemini
+    if config.GEMINI_API_KEY:
+        logger.debug("Google Gemini API key is set")
+        # LiteLLM expects GEMINI_API_KEY in the environment
+        os.environ['GEMINI_API_KEY'] = config.GEMINI_API_KEY
 
 def get_openrouter_fallback(model_name: str) -> Optional[str]:
     """Get OpenRouter fallback model for a given model name."""
@@ -115,8 +165,8 @@ def prepare_params(
     stream: bool = False,
     top_p: Optional[float] = None,
     model_id: Optional[str] = None,
-    enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low'
+    enable_thinking: Optional[bool] = True,
+    reasoning_effort: Optional[str] = 'high'
 ) -> Dict[str, Any]:
     """Prepare parameters for the API call."""
     params = {
@@ -346,3 +396,120 @@ async def make_llm_api_call(
 
 # Initialize API keys on module import
 setup_api_keys()
+
+# Test code for OpenRouter integration
+async def test_openrouter():
+    """Test the OpenRouter integration with a simple query."""
+    test_messages = [
+        {"role": "user", "content": "Hello, can you give me a quick test response?"}
+    ]
+
+    try:
+        # Test with standard OpenRouter model
+        print("\n--- Testing standard OpenRouter model ---")
+        response = await make_llm_api_call(
+            model_name="openrouter/openai/gpt-4o-mini",
+            messages=test_messages,
+            temperature=0.7,
+            max_tokens=100
+        )
+        print(f"Response: {response.choices[0].message.content}")
+
+        # Test with deepseek model
+        print("\n--- Testing deepseek model ---")
+        response = await make_llm_api_call(
+            model_name="openrouter/deepseek/deepseek-r1-distill-llama-70b",
+            messages=test_messages,
+            temperature=0.7,
+            max_tokens=100
+        )
+        print(f"Response: {response.choices[0].message.content}")
+        print(f"Model used: {response.model}")
+
+        # Test with Mistral model
+        print("\n--- Testing Mistral model ---")
+        response = await make_llm_api_call(
+            model_name="openrouter/mistralai/mixtral-8x7b-instruct",
+            messages=test_messages,
+            temperature=0.7,
+            max_tokens=100
+        )
+        print(f"Response: {response.choices[0].message.content}")
+        print(f"Model used: {response.model}")
+
+        return True
+    except Exception as e:
+        print(f"Error testing OpenRouter: {str(e)}")
+        return False
+
+async def test_bedrock():
+    """Test the AWS Bedrock integration with a simple query."""
+    test_messages = [
+        {"role": "user", "content": "Hello, can you give me a quick test response?"}
+    ]
+
+    try:
+        response = await make_llm_api_call(
+            model_name="bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
+            model_id="arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            messages=test_messages,
+            temperature=0.7,
+            # Claude 3.7 has issues with max_tokens, so omit it
+            # max_tokens=100
+        )
+        print(f"Response: {response.choices[0].message.content}")
+        print(f"Model used: {response.model}")
+
+        return True
+    except Exception as e:
+        print(f"Error testing Bedrock: {str(e)}")
+        return False
+
+async def test_gemini():
+    """Test the Google Gemini integration with a simple query."""
+    test_messages = [
+        {"role": "user", "content": "Hello, can you give me a quick test response?"}
+    ]
+
+    try:
+        print("\n--- Testing Google Gemini model ---")
+        response = await make_llm_api_call(
+            model_name="gemini/gemini-2.5-pro",  # LiteLLM uses gemini/ prefix
+            messages=test_messages,
+            temperature=0.7,
+            max_tokens=100
+        )
+        print(f"Response: {response.choices[0].message.content}")
+        print(f"Model used: {response.model}")
+        return True
+    except Exception as e:
+        print(f"Error testing Google Gemini: {str(e)}")
+        return False
+
+if __name__ == "__main__":
+    import asyncio
+
+    # Test all providers
+    test_functions = [
+        test_bedrock,
+        test_gemini,
+        test_openrouter
+    ]
+    
+    success = True
+    for test_func in test_functions:
+        test_name = test_func.__name__.replace('test_', '').upper()
+        print(f"\n{'='*50}")
+        print(f"TESTING {test_name}")
+        print(f"{'='*50}")
+        test_result = asyncio.run(test_func())
+        if not test_result:
+            success = False
+            print(f"❌ {test_name} test failed!")
+        else:
+            print(f"✅ {test_name} test passed!")
+    
+    if success:
+        print("\n✅ All integration tests completed successfully!")
+    else:
+        print("\n❌ Some integration tests failed!")

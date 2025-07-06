@@ -252,7 +252,7 @@ class ResponseProcessor:
                     # Process content chunk
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
-                        # print(chunk_content, end='', flush=True)
+                        print(chunk_content, end='', flush=True)
                         accumulated_content += chunk_content
                         current_xml_content += chunk_content
 

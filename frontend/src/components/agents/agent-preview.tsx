@@ -15,6 +15,7 @@ import { useAddUserMessageMutation } from '@/hooks/react-query/threads/use-messa
 import { useStartAgentMutation, useStopAgentMutation } from '@/hooks/react-query/threads/use-agent-run';
 import { BillingError } from '@/lib/api';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface Agent {
   agent_id: string;
@@ -43,6 +44,7 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandles>(null);
+  const queryClient = useQueryClient();
 
   const getAgentStyling = () => {
     const agentData = agent as any;
@@ -116,6 +118,66 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
     console.log(`[PREVIEW] Stream closed`);
   }, []);
 
+  const handleAgentCall = useCallback(async (agentName: string, message?: string) => {
+    console.log(`[PREVIEW] Agent call received for: ${agentName}`, message);
+    
+    if (!threadId) {
+      console.error('[PREVIEW] No thread ID available for agent call');
+      return;
+    }
+
+    try {
+      // Find the agent by name
+      const { data: agentsResponse } = await queryClient.fetchQuery({
+        queryKey: ['agents'],
+        queryFn: () => fetch('/api/agents').then(res => res.json())
+      });
+      
+      const targetAgent = agentsResponse?.agents?.find((agent: Agent) => 
+        agent.name.toLowerCase() === agentName.toLowerCase()
+      );
+
+      if (!targetAgent) {
+        toast.error(`Agent "${agentName}" not found`);
+        return;
+      }
+
+      // Add the handoff message to the conversation if provided
+      if (message) {
+        const handoffMessage: UnifiedMessage = {
+          message_id: `handoff-${Date.now()}`,
+          thread_id: threadId,
+          type: 'user',
+          is_llm_message: false,
+          content: message,
+          metadata: '{}',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, handoffMessage]);
+        
+        // Save the handoff message to backend
+        await addUserMessageMutation.mutateAsync({
+          threadId,
+          message
+        });
+      }
+
+      // Start the new agent
+      const agentResult = await startAgentMutation.mutateAsync({
+        threadId,
+        options: { agent_id: targetAgent.agent_id }
+      });
+
+      setAgentRunId(agentResult.agent_run_id);
+      toast.success(`Switched to ${targetAgent.name}`);
+      
+    } catch (error: any) {
+      console.error('[PREVIEW] Error in agent call:', error);
+      toast.error(`Failed to switch to ${agentName}: ${error.message}`);
+    }
+  }, [threadId, queryClient, addUserMessageMutation, startAgentMutation, setMessages]);
+
   const {
     status: streamHookStatus,
     textContent: streamingTextContent,
@@ -130,6 +192,7 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
       onStatusChange: handleStreamStatusChange,
       onError: handleStreamError,
       onClose: handleStreamClose,
+      onAgentCall: handleAgentCall,
     },
     threadId,
     setMessages,

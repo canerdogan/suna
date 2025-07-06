@@ -17,6 +17,7 @@ import { TooltipProvider, TooltipTrigger } from '@radix-ui/react-tooltip';
 import { BillingModal } from '@/components/billing/billing-modal';
 import ChatDropdown from './chat-dropdown';
 import { handleFiles } from './file-upload-handler';
+import { ChatSettingsDropdown } from './chat-settings-dropdown';
 
 interface MessageInputProps {
   value: string;
@@ -51,6 +52,10 @@ interface MessageInputProps {
   onAgentSelect?: (agentId: string | undefined) => void;
   enableAdvancedConfig?: boolean;
   hideAgentSelection?: boolean;
+  thinkingEnabled?: boolean;
+  onThinkingChange?: (enabled: boolean) => void;
+  reasoningEffort?: string;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
 export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
@@ -89,6 +94,10 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
       onAgentSelect,
       enableAdvancedConfig = false,
       hideAgentSelection = false,
+      thinkingEnabled,
+      onThinkingChange,
+      reasoningEffort,
+      onReasoningEffortChange,
     },
     ref,
   ) => {
@@ -159,23 +168,34 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
 
         return (
           <div className="flex items-center gap-2">
-            {showAdvancedFeatures && !hideAgentSelection && (
-              <AgentSelector
+            {showAdvancedFeatures && !hideAgentSelection ? (
+              <ChatSettingsDropdown
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={onAgentSelect}
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
+                modelOptions={modelOptions}
+                subscriptionStatus={subscriptionStatus}
+                canAccessModel={canAccessModel}
+                refreshCustomModels={refreshCustomModels}
                 disabled={loading || (disabled && !isAgentRunning)}
+                thinkingEnabled={thinkingEnabled}
+                onThinkingChange={onThinkingChange}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={onReasoningEffortChange}
+              />
+            ) : (
+              <ModelSelector
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
+                modelOptions={modelOptions}
+                subscriptionStatus={subscriptionStatus}
+                canAccessModel={canAccessModel}
+                refreshCustomModels={refreshCustomModels}
+                billingModalOpen={billingModalOpen}
+                setBillingModalOpen={setBillingModalOpen}
               />
             )}
-            <ModelSelector
-              selectedModel={selectedModel}
-              onModelChange={onModelChange}
-              modelOptions={modelOptions}
-              subscriptionStatus={subscriptionStatus}
-              canAccessModel={canAccessModel}
-              refreshCustomModels={refreshCustomModels}
-              billingModalOpen={billingModalOpen}
-              setBillingModalOpen={setBillingModalOpen}
-            />
           </div>
         );
       }

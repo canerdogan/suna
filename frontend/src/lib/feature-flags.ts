@@ -35,6 +35,7 @@ export class FeatureFlagManager {
 
   async isEnabled(flagName: string): Promise<boolean> {
     try {
+      return true;
       const cached = flagCache.get(flagName);
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         return cached.value;

@@ -36,7 +36,7 @@ export interface ChatInputHandles {
 export interface ChatInputProps {
   onSubmit: (
     message: string,
-    options?: { model_name?: string; enable_thinking?: boolean },
+    options?: { model_name?: string; enable_thinking?: boolean; reasoning_effort?: string },
   ) => void;
   placeholder?: string;
   loading?: boolean;
@@ -64,6 +64,10 @@ export interface ChatInputProps {
   hideAgentSelection?: boolean;
   defaultShowSnackbar?: 'tokens' | 'upgrade' | false;
   showToLowCreditUsers?: boolean;
+  thinkingEnabled?: boolean;
+  onThinkingChange?: (enabled: boolean) => void;
+  reasoningEffort?: string;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
 export interface UploadedFile {
@@ -106,6 +110,10 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       hideAgentSelection = false,
       defaultShowSnackbar = false,
       showToLowCreditUsers = true,
+      thinkingEnabled = false,
+      onThinkingChange,
+      reasoningEffort = 'low',
+      onReasoningEffortChange,
     },
     ref,
   ) => {
@@ -241,16 +249,12 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
       }
 
-      let baseModelName = getActualModelId(selectedModel);
-      let thinkingEnabled = false;
-      if (selectedModel.endsWith('-thinking')) {
-        baseModelName = getActualModelId(selectedModel.replace(/-thinking$/, ''));
-        thinkingEnabled = true;
-      }
+      const baseModelName = getActualModelId(selectedModel);
 
       onSubmit(message, {
         model_name: baseModelName,
         enable_thinking: thinkingEnabled,
+        reasoning_effort: reasoningEffort,
       });
 
       if (!isControlled) {
@@ -366,8 +370,6 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
               }
             }}
           >
-
-
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
               <CardContent className={`w-full p-1.5 ${enableAdvancedConfig && selectedAgentId ? 'pb-1' : 'pb-2'} ${bgColor} border ${enableAdvancedConfig && selectedAgentId ? 'rounded-t-3xl' : 'rounded-3xl'}`}>
                 <AttachmentGroup
@@ -412,6 +414,10 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                   selectedAgentId={selectedAgentId}
                   onAgentSelect={onAgentSelect}
                   hideAgentSelection={hideAgentSelection}
+                  thinkingEnabled={thinkingEnabled}
+                  onThinkingChange={onThinkingChange}
+                  reasoningEffort={reasoningEffort}
+                  onReasoningEffortChange={onReasoningEffortChange}
                 />
               </CardContent>
 
