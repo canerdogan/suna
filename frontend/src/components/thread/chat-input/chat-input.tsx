@@ -27,7 +27,7 @@ export interface ChatInputHandles {
 export interface ChatInputProps {
   onSubmit: (
     message: string,
-    options?: { model_name?: string; enable_thinking?: boolean },
+    options?: { model_name?: string; enable_thinking?: boolean; reasoning_effort?: string },
   ) => void;
   placeholder?: string;
   loading?: boolean;
@@ -96,6 +96,8 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const [thinkingEnabled, setThinkingEnabled] = useState(false);
+    const [reasoningEffort, setReasoningEffort] = useState('low');
 
     const {
       selectedModel,
@@ -147,16 +149,12 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
       }
 
-      let baseModelName = getActualModelId(selectedModel);
-      let thinkingEnabled = false;
-      if (selectedModel.endsWith('-thinking')) {
-        baseModelName = getActualModelId(selectedModel.replace(/-thinking$/, ''));
-        thinkingEnabled = true;
-      }
+      const baseModelName = getActualModelId(selectedModel);
 
       onSubmit(message, {
         model_name: baseModelName,
         enable_thinking: thinkingEnabled,
+        reasoning_effort: reasoningEffort,
       });
 
       if (!isControlled) {
@@ -303,6 +301,10 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                 subscriptionStatus={subscriptionStatus}
                 canAccessModel={canAccessModel}
                 refreshCustomModels={refreshCustomModels}
+                thinkingEnabled={thinkingEnabled}
+                onThinkingChange={setThinkingEnabled}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={setReasoningEffort}
 
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={onAgentSelect}

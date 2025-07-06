@@ -50,6 +50,7 @@ export interface AgentStreamCallbacks {
   onClose?: (finalStatus: string) => void; // Optional: Notify when streaming definitively ends
   onAssistantStart?: () => void; // Optional: Notify when assistant starts streaming
   onAssistantChunk?: (chunk: { content: string }) => void; // Optional: Notify on each assistant message chunk
+  onAgentCall?: (agentName: string, message?: string) => void; // Optional: Notify when agent call tool is used
 }
 
 // Helper function to map API messages to UnifiedMessages
@@ -329,6 +330,23 @@ export function useAgentStream(
           break;
         case 'tool':
           setToolCall(null); // Clear any streaming tool call
+          
+          // Check if this is an agent call tool
+          if (parsedContent.function_name === 'agent_call' && parsedContent.output) {
+            try {
+              const toolOutput = typeof parsedContent.output === 'string' 
+                ? JSON.parse(parsedContent.output) 
+                : parsedContent.output;
+              
+              if (toolOutput.action === 'agent_call' && toolOutput.target_agent) {
+                console.log('[useAgentStream] Agent call detected:', toolOutput.target_agent);
+                callbacks.onAgentCall?.(toolOutput.target_agent, toolOutput.message);
+              }
+            } catch (error) {
+              console.error('[useAgentStream] Error parsing agent call tool output:', error);
+            }
+          }
+          
           if (message.message_id) callbacks.onMessage(message);
           break;
         case 'status':

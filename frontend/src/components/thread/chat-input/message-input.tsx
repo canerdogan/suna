@@ -46,6 +46,10 @@ interface MessageInputProps {
   refreshCustomModels?: () => void;
   selectedAgentId?: string;
   onAgentSelect?: (agentId: string | undefined) => void;
+  thinkingEnabled?: boolean;
+  onThinkingChange?: (enabled: boolean) => void;
+  reasoningEffort?: string;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
 export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
@@ -81,6 +85,10 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
 
       selectedAgentId,
       onAgentSelect,
+      thinkingEnabled,
+      onThinkingChange,
+      reasoningEffort,
+      onReasoningEffortChange,
     },
     ref,
   ) => {
@@ -198,6 +206,10 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                 canAccessModel={canAccessModel}
                 refreshCustomModels={refreshCustomModels}
                 disabled={loading || (disabled && !isAgentRunning)}
+                thinkingEnabled={thinkingEnabled}
+                onThinkingChange={onThinkingChange}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={onReasoningEffortChange}
               />
             )}
 

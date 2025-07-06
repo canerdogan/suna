@@ -11,6 +11,14 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ModelSelector } from './model-selector';
 import { SubscriptionStatus } from './_use-model-selection';
 import { cn } from '@/lib/utils';
@@ -27,6 +35,10 @@ interface ChatSettingsDialogProps {
   className?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  thinkingEnabled?: boolean;
+  onThinkingChange?: (enabled: boolean) => void;
+  reasoningEffort?: string;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
 export function ChatSettingsDialog({
@@ -40,6 +52,10 @@ export function ChatSettingsDialog({
   className,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
+  thinkingEnabled = false,
+  onThinkingChange,
+  reasoningEffort = 'low',
+  onReasoningEffortChange,
 }: ChatSettingsDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [billingModalOpen, setBillingModalOpen] = useState(false);
@@ -102,6 +118,50 @@ export function ChatSettingsDialog({
             <p className="text-xs text-muted-foreground">
               Choose the AI model that best fits your needs. Premium models offer better performance.
             </p>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="thinking-toggle" className="text-sm font-medium">
+                  Thinking Mode
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Enable deeper reasoning with step-by-step thinking
+                </p>
+              </div>
+              <Switch
+                id="thinking-toggle"
+                checked={thinkingEnabled}
+                onCheckedChange={onThinkingChange}
+                disabled={disabled}
+              />
+            </div>
+            
+            {thinkingEnabled && (
+              <div className="space-y-2">
+                <Label htmlFor="reasoning-effort" className="text-sm font-medium">
+                  Reasoning Effort
+                </Label>
+                <Select
+                  value={reasoningEffort}
+                  onValueChange={onReasoningEffortChange}
+                  disabled={disabled}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select reasoning effort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low - Quick responses</SelectItem>
+                    <SelectItem value="medium">Medium - Balanced thinking</SelectItem>
+                    <SelectItem value="high">High - Deep analysis</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Higher effort provides more thorough reasoning but takes longer
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>

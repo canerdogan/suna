@@ -56,6 +56,10 @@ interface ChatSettingsDropdownProps {
   canAccessModel: (modelId: string) => boolean;
   refreshCustomModels?: () => void;
   disabled?: boolean;
+  thinkingEnabled?: boolean;
+  onThinkingChange?: (enabled: boolean) => void;
+  reasoningEffort?: string;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
 export const ChatSettingsDropdown: React.FC<ChatSettingsDropdownProps> = ({
@@ -68,6 +72,10 @@ export const ChatSettingsDropdown: React.FC<ChatSettingsDropdownProps> = ({
   canAccessModel,
   refreshCustomModels,
   disabled = false,
+  thinkingEnabled,
+  onThinkingChange,
+  reasoningEffort,
+  onReasoningEffortChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -308,6 +316,10 @@ export const ChatSettingsDropdown: React.FC<ChatSettingsDropdownProps> = ({
         subscriptionStatus={subscriptionStatus}
         canAccessModel={canAccessModel}
         refreshCustomModels={refreshCustomModels}
+        thinkingEnabled={thinkingEnabled}
+        onThinkingChange={onThinkingChange}
+        reasoningEffort={reasoningEffort}
+        onReasoningEffortChange={onReasoningEffortChange}
       />
     </>
   );
