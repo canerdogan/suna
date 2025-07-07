@@ -8,13 +8,14 @@ import { FileUploadHandler } from './file-upload-handler';
 import { VoiceRecorder } from './voice-recorder';
 import { ModelSelector } from './model-selector';
 import { ChatSettingsDropdown } from './chat-settings-dropdown';
-import { SubscriptionStatus } from './_use-model-selection';
+import { canAccessModel, SubscriptionStatus } from './_use-model-selection';
 import { isLocalMode } from '@/lib/config';
 import { useFeatureFlag } from '@/lib/feature-flags';
 import { TooltipContent } from '@/components/ui/tooltip';
 import { Tooltip } from '@/components/ui/tooltip';
 import { TooltipProvider, TooltipTrigger } from '@radix-ui/react-tooltip';
 import { BillingModal } from '@/components/billing/billing-modal';
+import ChatDropdown from './chat-dropdown';
 
 interface MessageInputProps {
   value: string;
@@ -37,6 +38,7 @@ interface MessageInputProps {
   setIsUploading: React.Dispatch<React.SetStateAction<boolean>>;
   hideAttachments?: boolean;
   messages?: any[]; // Add messages prop
+  isLoggedIn?: boolean;
 
   selectedModel: string;
   onModelChange: (model: string) => void;
@@ -75,6 +77,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
       setIsUploading,
       hideAttachments = false,
       messages = [],
+      isLoggedIn = true,
 
       selectedModel,
       onModelChange,
@@ -130,6 +133,36 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
       }
     };
 
+    const renderDropdown = () => {
+      if (isLoggedIn) {
+        if (!customAgentsEnabled || flagsLoading) {
+          return <ModelSelector
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
+            modelOptions={modelOptions}
+            subscriptionStatus={subscriptionStatus}
+            canAccessModel={canAccessModel}
+            refreshCustomModels={refreshCustomModels}
+            billingModalOpen={billingModalOpen}
+            setBillingModalOpen={setBillingModalOpen}
+          />
+        } else {
+          return <ChatSettingsDropdown
+            selectedAgentId={selectedAgentId}
+            onAgentSelect={onAgentSelect}
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
+            modelOptions={modelOptions}
+            subscriptionStatus={subscriptionStatus}
+            canAccessModel={canAccessModel}
+            refreshCustomModels={refreshCustomModels}
+            disabled={loading || (disabled && !isAgentRunning)}
+          />
+        }
+      }
+      return <ChatDropdown />;
+    }
+
     return (
       <div className="relative flex flex-col w-full h-full gap-2 justify-between">
 
@@ -164,6 +197,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                 setUploadedFiles={setUploadedFiles}
                 setIsUploading={setIsUploading}
                 messages={messages}
+                isLoggedIn={isLoggedIn}
               />
             )}
 
@@ -212,6 +246,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                 onReasoningEffortChange={onReasoningEffortChange}
               />
             )}
+            {renderDropdown()}
 
             {/* Billing Modal */}
             <BillingModal
@@ -220,10 +255,10 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
               returnUrl={typeof window !== 'undefined' ? window.location.href : '/'}
             />
 
-            <VoiceRecorder
+            {isLoggedIn && <VoiceRecorder
               onTranscription={onTranscription}
               disabled={loading || (disabled && !isAgentRunning)}
-            />
+            />}
 
             <Button
               type="submit"

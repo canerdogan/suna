@@ -59,6 +59,7 @@ export interface ChatInputProps {
   onThinkingChange?: (enabled: boolean) => void;
   reasoningEffort?: string;
   onReasoningEffortChange?: (effort: string) => void;
+  isLoggedIn?: boolean;
 }
 
 export interface UploadedFile {
@@ -103,6 +104,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       onThinkingChange,
       reasoningEffort,
       onReasoningEffortChange,
+      isLoggedIn = true,
     },
     ref,
   ) => {
@@ -322,7 +324,6 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                 setIsUploading={setIsUploading}
                 hideAttachments={hideAttachments}
                 messages={messages}
-
                 selectedModel={finalSelectedModel}
                 onModelChange={finalOnModelChange}
                 modelOptions={finalModelOptions}
@@ -333,7 +334,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                 onThinkingChange={onThinkingChange}
                 reasoningEffort={finalReasoningEffort}
                 onReasoningEffortChange={onReasoningEffortChange}
-
+                isLoggedIn={isLoggedIn}
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={onAgentSelect}
               />
