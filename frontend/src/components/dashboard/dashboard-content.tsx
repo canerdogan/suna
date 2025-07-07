@@ -40,6 +40,10 @@ export function DashboardContent() {
   const [autoSubmit, setAutoSubmit] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
   const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
+  
+  // Chat settings state
+  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('low');
   const { billingError, handleBillingError, clearBillingError } =
     useBillingError();
   const router = useRouter();
@@ -239,6 +243,10 @@ export function DashboardContent() {
               onAgentSelect={setSelectedAgentId}
               enableAdvancedConfig={true}
               onConfigureAgent={(agentId) => router.push(`/agents/config/${agentId}`)}
+              thinkingEnabled={thinkingEnabled}
+              onThinkingChange={setThinkingEnabled}
+              reasoningEffort={reasoningEffort}
+              onReasoningEffortChange={setReasoningEffort}
             />
           </div>
           <Examples onSelectPrompt={setInputValue} />
