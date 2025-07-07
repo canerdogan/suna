@@ -67,6 +67,10 @@ export default function ThreadPage({
   
   // Chat settings state 
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  
+  const handleThinkingChange = useCallback((enabled: boolean) => {
+    setThinkingEnabled(enabled);
+  }, []);
   const [reasoningEffort, setReasoningEffort] = useState('low');
 
   // Refs
@@ -715,7 +719,7 @@ export default function ThreadPage({
               canAccessModel={canAccessModel}
               refreshCustomModels={refreshCustomModels}
               thinkingEnabled={thinkingEnabled}
-              onThinkingChange={setThinkingEnabled}
+              onThinkingChange={handleThinkingChange}
               reasoningEffort={reasoningEffort}
               onReasoningEffortChange={setReasoningEffort}
             />
