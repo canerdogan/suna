@@ -6,8 +6,8 @@ class AgentCallTool(Tool):
     """Tool for calling another agent to continue the conversation.
     
     This tool allows agents to hand off the conversation to another agent
-    by specifying the target agent's name. The actual agent switching happens
-    on the frontend side.
+    by specifying the target agent's name. The tool will terminate the current
+    agent run and trigger agent switching on the frontend.
     """
 
     def __init__(self, **kwargs):
@@ -18,7 +18,7 @@ class AgentCallTool(Tool):
         "type": "function",
         "function": {
             "name": "agent_call",
-            "description": "Call another agent to continue the conversation. Use this to hand off the conversation to a different agent when their expertise is needed. The target agent will receive the conversation context and continue from where this agent left off.",
+            "description": "Call another agent to continue the conversation. Use this to hand off the conversation to a different agent when their expertise is needed. The target agent will receive the conversation context and continue from where this agent left off. This tool automatically terminates the current agent run.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -58,7 +58,7 @@ class AgentCallTool(Tool):
             handoff_message: Optional message to send to the target agent
             
         Returns:
-            ToolResult indicating the agent call was initiated
+            ToolResult indicating the agent call was initiated and current agent should terminate
         """
         # Validate that agent_id is provided and not empty
         if not agent_id or not agent_id.strip():
@@ -77,7 +77,8 @@ class AgentCallTool(Tool):
         logger.info(f"🚨 AGENT CALL TOOL EXECUTED! exact_agent_id='{exact_agent_id}', handoff_message={handoff_message}")
         print(f"🚨 AGENT CALL TOOL EXECUTED! exact_agent_id='{exact_agent_id}', handoff_message={handoff_message}")
         
-        # Return success - the actual agent switching happens on the frontend
+        # Return success result - agent termination will be handled automatically
+        # by the response processor since agent_call is now a terminating tool
         result = ToolResult(
             output={
                 "action": "agent_call",
