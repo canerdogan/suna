@@ -3,6 +3,12 @@ import type { NextConfig } from 'next';
 
 let nextConfig: NextConfig = {
   webpack: (config) => {
+    // Suppress critical dependency warnings
+    config.ignoreWarnings = [
+      { module: /require-in-the-middle/ },
+      { message: /Critical dependency/ },
+    ];
+
     // This rule prevents issues with pdf.js and canvas
     config.externals = [...(config.externals || []), { canvas: 'canvas' }];
 

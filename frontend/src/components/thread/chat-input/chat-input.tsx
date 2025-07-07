@@ -49,6 +49,16 @@ export interface ChatInputProps {
   toolCallIndex?: number;
   showToolPreview?: boolean;
   onExpandToolPreview?: () => void;
+  selectedModel?: string;
+  onModelChange?: (model: string) => void;
+  modelOptions?: any[];
+  subscriptionStatus?: any;
+  canAccessModel?: (modelId: string) => boolean;
+  refreshCustomModels?: () => void;
+  thinkingEnabled?: boolean;
+  onThinkingChange?: (enabled: boolean) => void;
+  reasoningEffort?: string;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
 export interface UploadedFile {
@@ -83,6 +93,16 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       toolCallIndex = 0,
       showToolPreview = false,
       onExpandToolPreview,
+      selectedModel,
+      onModelChange,
+      modelOptions,
+      subscriptionStatus,
+      canAccessModel,
+      refreshCustomModels,
+      thinkingEnabled,
+      onThinkingChange,
+      reasoningEffort,
+      onReasoningEffortChange,
     },
     ref,
   ) => {
@@ -96,18 +116,26 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
-    const [thinkingEnabled, setThinkingEnabled] = useState(false);
-    const [reasoningEffort, setReasoningEffort] = useState('low');
 
     const {
-      selectedModel,
-      setSelectedModel: handleModelChange,
-      subscriptionStatus,
-      allModels: modelOptions,
-      canAccessModel,
+      selectedModel: fallbackSelectedModel,
+      setSelectedModel: fallbackHandleModelChange,
+      subscriptionStatus: fallbackSubscriptionStatus,
+      allModels: fallbackModelOptions,
+      canAccessModel: fallbackCanAccessModel,
       getActualModelId,
-      refreshCustomModels,
+      refreshCustomModels: fallbackRefreshCustomModels,
     } = useModelSelection();
+
+    // Use props if provided, otherwise fall back to hook values
+    const finalSelectedModel = selectedModel || fallbackSelectedModel;
+    const finalOnModelChange = onModelChange || fallbackHandleModelChange;
+    const finalModelOptions = modelOptions || fallbackModelOptions;
+    const finalSubscriptionStatus = subscriptionStatus || fallbackSubscriptionStatus;
+    const finalCanAccessModel = canAccessModel || fallbackCanAccessModel;
+    const finalRefreshCustomModels = refreshCustomModels || fallbackRefreshCustomModels;
+    const finalThinkingEnabled = thinkingEnabled !== undefined ? thinkingEnabled : false;
+    const finalReasoningEffort = reasoningEffort || 'low';
 
     const deleteFileMutation = useFileDelete();
     const queryClient = useQueryClient();
@@ -149,12 +177,12 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
       }
 
-      const baseModelName = getActualModelId(selectedModel);
+      const baseModelName = getActualModelId(finalSelectedModel);
 
       onSubmit(message, {
         model_name: baseModelName,
-        enable_thinking: thinkingEnabled,
-        reasoning_effort: reasoningEffort,
+        enable_thinking: finalThinkingEnabled,
+        reasoning_effort: finalReasoningEffort,
       });
 
       if (!isControlled) {
@@ -295,16 +323,16 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                 hideAttachments={hideAttachments}
                 messages={messages}
 
-                selectedModel={selectedModel}
-                onModelChange={handleModelChange}
-                modelOptions={modelOptions}
-                subscriptionStatus={subscriptionStatus}
-                canAccessModel={canAccessModel}
-                refreshCustomModels={refreshCustomModels}
-                thinkingEnabled={thinkingEnabled}
-                onThinkingChange={setThinkingEnabled}
-                reasoningEffort={reasoningEffort}
-                onReasoningEffortChange={setReasoningEffort}
+                selectedModel={finalSelectedModel}
+                onModelChange={finalOnModelChange}
+                modelOptions={finalModelOptions}
+                subscriptionStatus={finalSubscriptionStatus}
+                canAccessModel={finalCanAccessModel}
+                refreshCustomModels={finalRefreshCustomModels}
+                thinkingEnabled={finalThinkingEnabled}
+                onThinkingChange={onThinkingChange}
+                reasoningEffort={finalReasoningEffort}
+                onReasoningEffortChange={onReasoningEffortChange}
 
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={onAgentSelect}

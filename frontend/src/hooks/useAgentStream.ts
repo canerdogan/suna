@@ -59,7 +59,6 @@ const mapApiMessagesToUnified = (
   currentThreadId: string,
 ): UnifiedMessage[] => {
   return (messagesData || [])
-    .filter((msg) => msg.type !== 'status')
     .map((msg: ApiMessageType) => ({
       message_id: msg.message_id || null,
       thread_id: msg.thread_id || currentThreadId,
@@ -329,21 +328,76 @@ export function useAgentStream(
           }
           break;
         case 'tool':
+          // Handle both structured and flat tool message formats
+          let functionName: string | undefined;
+          let toolOutput: any;
+          
+          // Parse nested content if it's a string (new format)
+          let toolData = parsedContent;
+          if (typeof parsedContent.content === 'string') {
+            try {
+              toolData = JSON.parse(parsedContent.content);
+            } catch (e) {
+              console.warn('Failed to parse tool content:', e);
+            }
+          }
+          
+          // Check if this is the new structured format
+          if (toolData.tool_execution) {
+            functionName = toolData.tool_execution.function_name;
+            toolOutput = toolData.tool_execution.result?.output;
+          } else {
+            // Legacy flat format
+            functionName = toolData.function_name || parsedContent.function_name;
+            toolOutput = toolData.output || parsedContent.output;
+          }
+          
+          console.log('%c🔧 TOOL MESSAGE RECEIVED', 'background: cyan; color: black; font-weight: bold;', {
+            function_name: functionName,
+            hasOutput: !!toolOutput,
+            outputType: typeof toolOutput,
+            isStructured: !!toolData.tool_execution
+          });
+          
           setToolCall(null); // Clear any streaming tool call
           
           // Check if this is an agent call tool
-          if (parsedContent.function_name === 'agent_call' && parsedContent.output) {
+          if (functionName === 'agent_call' && toolOutput) {
+            // Add a very visible console log
+            console.log('%c🚨 AGENT CALL TOOL DETECTED! 🚨', 'background: red; color: white; font-size: 16px; padding: 5px;');
+            // Simple alert to be 100% sure we catch it
+            alert('🚨 AGENT CALL TOOL DETECTED!');
+            console.log('%c🔄 [AGENT_CALL] Tool output received:', 'background: blue; color: white; font-weight: bold;', JSON.stringify(toolOutput, null, 2));
+            
             try {
-              const toolOutput = typeof parsedContent.output === 'string' 
-                ? JSON.parse(parsedContent.output) 
-                : parsedContent.output;
+              const agentCallData = typeof toolOutput === 'string' 
+                ? JSON.parse(toolOutput) 
+                : toolOutput;
               
-              if (toolOutput.action === 'agent_call' && toolOutput.target_agent) {
-                console.log('[useAgentStream] Agent call detected:', toolOutput.target_agent);
-                callbacks.onAgentCall?.(toolOutput.target_agent, toolOutput.message);
+              console.log('%c📋 [AGENT_CALL] Parsed tool output:', 'background: green; color: white; font-weight: bold;', JSON.stringify(agentCallData, null, 2));
+              
+              if (agentCallData.action === 'agent_call' && agentCallData.target_agent_id) {
+                console.log('%c🎯 [AGENT_CALL] Agent call detected!', 'background: purple; color: white; font-size: 14px; font-weight: bold;');
+                console.log('%c📋 [AGENT_CALL] Target Agent ID:', 'color: blue; font-weight: bold;', agentCallData.target_agent_id);
+                console.log('%c💬 [AGENT_CALL] Handoff Message:', 'color: green; font-weight: bold;', agentCallData.message || 'No message provided');
+                console.log('%c✅ [AGENT_CALL] Status:', 'color: orange; font-weight: bold;', agentCallData.status);
+                
+                // Add window alert for testing
+                alert(`🚨 AGENT CALL DETECTED! Target: ${agentCallData.target_agent_id}`);
+                
+                // Call the callback with target_agent_id
+                callbacks.onAgentCall?.(agentCallData.target_agent_id, agentCallData.message);
+              } else {
+                console.log('%c⚠️ [AGENT_CALL] Tool output missing required fields:', 'background: orange; color: black; font-weight: bold;', {
+                  action: agentCallData.action,
+                  target_agent_id: agentCallData.target_agent_id,
+                  hasTargetAgentId: !!agentCallData.target_agent_id
+                });
+                alert(`⚠️ AGENT CALL - Missing fields! Action: ${agentCallData.action}, Target ID: ${agentCallData.target_agent_id}`);
               }
             } catch (error) {
-              console.error('[useAgentStream] Error parsing agent call tool output:', error);
+              console.log('%c❌ [AGENT_CALL] Error parsing agent call tool output:', 'background: red; color: white; font-weight: bold;', error);
+              alert(`❌ AGENT CALL - Parse error: ${error.message}`);
             }
           }
           
@@ -393,6 +447,11 @@ export function useAgentStream(
             default:
               // console.debug('[useAgentStream] Received unhandled status type:', parsedContent.status_type);
               break;
+          }
+          
+          // Handle status messages that should be displayed to the user
+          if (message.message_id) {
+            callbacks.onMessage(message);
           }
           break;
         case 'user':

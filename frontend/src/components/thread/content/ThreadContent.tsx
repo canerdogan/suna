@@ -18,6 +18,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AgentLoader } from './loader';
 import { parseXmlToolCalls, isNewXmlFormat, extractToolNameFromStream } from '@/components/thread/tool-views/xml-parser';
 import { parseToolResult } from '@/components/thread/tool-views/tool-result-parser';
+import { StatusMessage } from '@/components/thread/status-message';
 
 // Define the set of  tags whose raw XML should be hidden during streaming
 const HIDE_STREAMING_XML_TAGS = new Set([
@@ -71,6 +72,52 @@ function getEnhancedToolDisplayName(toolName: string, rawXml?: string): string {
     return getUserFriendlyToolName(toolName);
 }
 
+// Parse status messages from the content
+function parseStatusMessage(content: string): {
+    phase?: number;
+    total?: number;
+    message: string;
+} | null {
+    // Try to parse as JSON first
+    try {
+        const parsed = JSON.parse(content);
+        if (parsed.phase !== undefined || parsed.total !== undefined || parsed.message) {
+            return {
+                phase: parsed.phase,
+                total: parsed.total,
+                message: parsed.message || parsed.content || 'Status update'
+            };
+        }
+    } catch (e) {
+        // Not JSON, continue to XML parsing
+    }
+
+    // Try to parse XML format: <status phase="1" total="6">Message</status>
+    const xmlMatch = content.match(/<status\s+(?:phase="(\d+)"\s+)?(?:total="(\d+)"\s+)?(?:status="([^"]+)"\s+)?[^>]*>([^<]*)<\/status>/i);
+    if (xmlMatch) {
+        const [, phaseStr, totalStr, statusStr, message] = xmlMatch;
+        return {
+            phase: phaseStr ? parseInt(phaseStr, 10) : undefined,
+            total: totalStr ? parseInt(totalStr, 10) : undefined,
+            message: message.trim() || 'Status update'
+        };
+    }
+
+    // Try to parse direct text format
+    const directMatch = content.match(/^(?:phase="(\d+)"\s+)?(?:total="(\d+)"\s+)?(.+)$/);
+    if (directMatch) {
+        const [, phaseStr, totalStr, message] = directMatch;
+        return {
+            phase: phaseStr ? parseInt(phaseStr, 10) : undefined,
+            total: totalStr ? parseInt(totalStr, 10) : undefined,
+            message: message.trim() || 'Status update'
+        };
+    }
+
+    return null;
+}
+
+
 // Helper function to render attachments (keeping original implementation for now)
 export function renderAttachments(attachments: string[], fileViewerHandler?: (filePath?: string, filePathList?: string[]) => void, sandboxId?: string, project?: Project) {
     if (!attachments || attachments.length === 0) return null;
@@ -111,27 +158,56 @@ export function renderMarkdownContent(
         const contentParts: React.ReactNode[] = [];
         let lastIndex = 0;
 
-        // Find all function_calls blocks
-        const functionCallsRegex = /<function_calls>([\s\S]*?)<\/function_calls>/gi;
+        // Handle both status tags and function_calls - they can appear at the same level
+        // Use a general regex to find both types of tags
+        const allXmlRegex = /<(?:status\s+[^>]*>[^<]*<\/status|function_calls>[\s\S]*?<\/function_calls)>/gi;
         let match;
 
-        while ((match = functionCallsRegex.exec(content)) !== null) {
-            // Add text before the function_calls block
+        while ((match = allXmlRegex.exec(content)) !== null) {
+            // Add text before the current match
             if (match.index > lastIndex) {
-                const textBeforeBlock = content.substring(lastIndex, match.index);
-                if (textBeforeBlock.trim()) {
+                const textBeforeMatch = content.substring(lastIndex, match.index);
+                if (textBeforeMatch.trim()) {
                     contentParts.push(
                         <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">
-                            {textBeforeBlock}
+                            {textBeforeMatch}
                         </Markdown>
                     );
                 }
             }
 
-            // Parse the tool calls in this block
-            const toolCalls = parseXmlToolCalls(match[0]);
+            // Check if this is a status tag
+            if (match[0].startsWith('<status')) {
+                const statusData = parseStatusMessage(match[0]);
+                
+                if (statusData) {
+                    contentParts.push(
+                        <div key={`status-${match.index}`} className="my-4">
+                            <StatusMessage
+                                message={statusData.message}
+                                phase={statusData.phase}
+                                total={statusData.total}
+                            />
+                        </div>
+                    );
+                } else {
+                    // Fallback for unparseable status messages
+                    const statusContentMatch = match[0].match(/<status[^>]*>([^<]*)<\/status>/i);
+                    const statusContent = statusContentMatch ? statusContentMatch[1] : 'Status update';
+                    
+                    contentParts.push(
+                        <div key={`status-${match.index}`} className="my-4">
+                            <StatusMessage
+                                message={statusContent}
+                            />
+                        </div>
+                    );
+                }
+            } else {
+                // This is a function_calls block - parse the tool calls
+                const toolCalls = parseXmlToolCalls(match[0]);
 
-            toolCalls.forEach((toolCall, index) => {
+                toolCalls.forEach((toolCall, index) => {
                 const toolName = toolCall.functionName.replace(/_/g, '-');
 
                 if (toolName === 'ask') {
@@ -180,12 +256,13 @@ export function renderMarkdownContent(
                         </div>
                     );
                 }
-            });
+                });
+            }
 
             lastIndex = match.index + match[0].length;
         }
 
-        // Add any remaining text after the last function_calls block
+        // Add any remaining text after the last match
         if (lastIndex < content.length) {
             const remainingText = content.substring(lastIndex);
             if (remainingText.trim()) {
@@ -196,6 +273,7 @@ export function renderMarkdownContent(
                 );
             }
         }
+
 
         return contentParts.length > 0 ? contentParts : <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content}</Markdown>;
     }
@@ -242,6 +320,33 @@ export function renderMarkdownContent(
                     {renderAttachments(attachments, fileViewerHandler, sandboxId, project)}
                 </div>
             );
+        } else if (toolName === 'status') {
+            // Handle status tags: <status phase="1" total="6">Message</status>
+            const statusData = parseStatusMessage(rawXml);
+            
+            if (statusData) {
+                contentParts.push(
+                    <div key={`status-${match.index}`} className="my-4">
+                        <StatusMessage
+                            message={statusData.message}
+                            phase={statusData.phase}
+                            total={statusData.total}
+                        />
+                    </div>
+                );
+            } else {
+                // Fallback for unparseable status messages
+                const contentMatch = rawXml.match(/<status[^>]*>([\s\S]*?)<\/status>/i);
+                const statusContent = contentMatch ? contentMatch[1] : 'Status update';
+                
+                contentParts.push(
+                    <div key={`status-${match.index}`} className="my-4">
+                        <StatusMessage
+                            message={statusContent}
+                        />
+                    </div>
+                );
+            }
         } else {
             const IconComponent = getToolIcon(toolName);
             const paramDisplay = extractPrimaryParam(toolName, rawXml);
@@ -271,6 +376,7 @@ export function renderMarkdownContent(
             <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content.substring(lastIndex)}</Markdown>
         );
     }
+
 
     return contentParts;
 }
@@ -758,11 +864,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         const showCursor = (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && !detectedTag;
                                                                         const IconComponent = detectedTag && detectedTag !== 'function_calls' ? getToolIcon(detectedTag) : null;
 
+                                                                        // Use renderMarkdownContent for streaming text too, to handle status messages
+                                                                        const streamingContent = renderMarkdownContent(
+                                                                            textToRender,
+                                                                            handleToolClick,
+                                                                            'streaming',
+                                                                            handleOpenFileViewer,
+                                                                            sandboxId,
+                                                                            project,
+                                                                            debugMode
+                                                                        );
+
                                                                         return (
                                                                             <>
-                                                                                {textBeforeTag && (
-                                                                                    <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere">{textBeforeTag}</Markdown>
-                                                                                )}
+                                                                                {streamingContent}
                                                                                 {showCursor && (
                                                                                     <span className="inline-block h-4 w-0.5 bg-primary ml-0.5 -mb-1 animate-pulse" />
                                                                                 )}

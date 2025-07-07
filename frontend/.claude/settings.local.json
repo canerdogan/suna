@@ -3,7 +3,10 @@
     "allow": [
       "Bash(rg:*)",
       "Bash(npm run build:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

@@ -22,9 +22,10 @@ import { useAddUserMessageMutation } from '@/hooks/react-query/threads/use-messa
 import { useStartAgentMutation, useStopAgentMutation } from '@/hooks/react-query/threads/use-agent-run';
 import { useSubscription } from '@/hooks/react-query/subscriptions/use-subscriptions';
 import { SubscriptionStatus } from '@/components/thread/chat-input/_use-model-selection';
+import { useModelSelection } from '@/components/thread/chat-input/_use-model-selection';
 
 import { UnifiedMessage, ApiMessageType, ToolCallInput, Project } from '../_types';
-import { useThreadData, useToolCalls, useBilling, useKeyboardShortcuts } from '../_hooks';
+import { useThreadData, useToolCalls, useAgentCall, useBilling, useKeyboardShortcuts } from '../_hooks';
 import { ThreadError, UpgradeDialog, ThreadLayout } from '../_components';
 import { useVncPreloader } from '@/hooks/useVncPreloader';
 import { useThreadAgent } from '@/hooks/react-query/agents/use-agents';
@@ -52,6 +53,21 @@ export default function ThreadPage({
   const [debugMode, setDebugMode] = useState(false);
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
+
+  // Model selection state - moved from ChatInput to page level
+  const {
+    selectedModel,
+    setSelectedModel: handleModelChange,
+    subscriptionStatus: modelSubscriptionStatus,
+    allModels: modelOptions,
+    canAccessModel,
+    getActualModelId,
+    refreshCustomModels,
+  } = useModelSelection();
+  
+  // Chat settings state 
+  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('low');
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -84,6 +100,22 @@ export default function ThreadPage({
     projectQuery,
     agentRunsQuery,
   } = useThreadData(threadId, projectId);
+
+  // Agent call hook with current settings
+  const { handleAgentCall } = useAgentCall({
+    threadId,
+    currentAgentRunId: agentRunId,
+    currentAgentStatus: agentStatus,
+    setAgentRunId,
+    setSelectedAgentId,
+    setMessages,
+    // Pass current model settings to preserve them during agent switching
+    currentModelSettings: {
+      model_name: selectedModel,
+      enable_thinking: thinkingEnabled,
+      reasoning_effort: reasoningEffort,
+    }
+  });
 
   const {
     toolCalls,
@@ -136,9 +168,8 @@ export default function ThreadPage({
   }, [threadAgentData, selectedAgentId]);
 
   const { data: subscriptionData } = useSubscription();
-  const subscriptionStatus: SubscriptionStatus = subscriptionData?.status === 'active'
-    ? 'active'
-    : 'no_subscription';
+  // Use the subscription status from useModelSelection to avoid conflicts
+  const subscriptionStatus = modelSubscriptionStatus;
 
   // Memoize project for VNC preloader to prevent re-preloading on every render
   const memoizedProject = useMemo(() => project, [project?.id, project?.sandbox?.vnc_preview, project?.sandbox?.pass]);
@@ -245,6 +276,7 @@ export default function ThreadPage({
       onStatusChange: handleStreamStatusChange,
       onError: handleStreamError,
       onClose: handleStreamClose,
+      onAgentCall: handleAgentCall,
     },
     threadId,
     setMessages,
@@ -253,7 +285,7 @@ export default function ThreadPage({
   const handleSubmitMessage = useCallback(
     async (
       message: string,
-      options?: { model_name?: string; enable_thinking?: boolean },
+      options?: { model_name?: string; enable_thinking?: boolean; reasoning_effort?: string },
     ) => {
       if (!message.trim()) return;
       setIsSending(true);
@@ -279,12 +311,17 @@ export default function ThreadPage({
           message
         });
 
+        // Use current page-level model settings or override with options
+        const finalOptions = {
+          model_name: options?.model_name || selectedModel,
+          enable_thinking: options?.enable_thinking !== undefined ? options.enable_thinking : thinkingEnabled,
+          reasoning_effort: options?.reasoning_effort || reasoningEffort,
+          agent_id: selectedAgentId
+        };
+
         const agentPromise = startAgentMutation.mutateAsync({
           threadId,
-          options: {
-            ...options,
-            agent_id: selectedAgentId
-          }
+          options: finalOptions
         });
 
         const results = await Promise.allSettled([messagePromise, agentPromise]);
@@ -334,7 +371,7 @@ export default function ThreadPage({
         setIsSending(false);
       }
     },
-    [threadId, project?.account_id, addUserMessageMutation, startAgentMutation, messagesQuery, agentRunsQuery, setMessages, setBillingData, setShowBillingAlert, setAgentRunId],
+    [threadId, project?.account_id, addUserMessageMutation, startAgentMutation, messagesQuery, agentRunsQuery, setMessages, setBillingData, setShowBillingAlert, setAgentRunId, selectedModel, thinkingEnabled, reasoningEffort, selectedAgentId],
   );
 
   const handleStopAgent = useCallback(async () => {
@@ -670,6 +707,17 @@ export default function ThreadPage({
                 setIsSidePanelOpen(true);
                 userClosedPanelRef.current = false;
               }}
+              // Pass model settings from page level
+              selectedModel={selectedModel}
+              onModelChange={handleModelChange}
+              modelOptions={modelOptions}
+              subscriptionStatus={subscriptionStatus}
+              canAccessModel={canAccessModel}
+              refreshCustomModels={refreshCustomModels}
+              thinkingEnabled={thinkingEnabled}
+              onThinkingChange={setThinkingEnabled}
+              reasoningEffort={reasoningEffort}
+              onReasoningEffortChange={setReasoningEffort}
             />
           </div>
         </div>

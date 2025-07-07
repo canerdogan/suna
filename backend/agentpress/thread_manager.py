@@ -190,6 +190,109 @@ class ThreadManager:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
             return []
 
+    async def _add_available_agents_to_system_prompt(self, working_system_prompt: Dict[str, Any], thread_id: str):
+        """Add available agents list to system prompt for agent_call tool."""
+        try:
+            from services.supabase import DBConnection
+            from utils.auth_utils import get_account_id_from_thread
+            
+            db = DBConnection()
+            client = await db.client
+            
+            # Get current account_id from thread
+            account_id = await get_account_id_from_thread(client, thread_id)
+            
+            if account_id:
+                # Fetch all agents for this account
+                agents_result = await client.table('agents').select('agent_id, name, description').eq('account_id', account_id).execute()
+                
+                if agents_result.data and len(agents_result.data) > 0:
+                    # DEBUG: Log all agent IDs being added to system prompt
+                    logger.info("🔍 DEBUG: AGENTS BEING ADDED TO SYSTEM PROMPT:")
+                    for agent_data in agents_result.data:
+                        agent_name = agent_data['name']
+                        agent_id = agent_data['agent_id']
+                        logger.info(f"🔍 Agent: {agent_name} | ID: {agent_id} | Length: {len(agent_id)}")
+                    
+                    agents_info = """
+
+# 🤖 AVAILABLE AGENTS FOR AGENT_CALL TOOL
+
+You have access to the following agents that you can call using the agent_call tool.
+
+## ⚠️ CRITICAL INSTRUCTIONS FOR AGENT IDs:
+- Agent IDs are 36-character UUIDs in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+- You MUST copy the agent_id EXACTLY as shown below - character for character
+- DO NOT modify, truncate, shorten, or change ANY part of the agent_id
+- DO NOT remove hyphens or any characters from the UUID
+- Even ONE missing or changed character will cause the agent call to FAIL
+
+## 📋 AGENT DIRECTORY:
+
+"""
+                    
+                    for i, agent_data in enumerate(agents_result.data, 1):
+                        agent_name = agent_data['name']
+                        agent_id = agent_data['agent_id']
+                        description = agent_data.get('description', 'No description available')
+                        
+                        agents_info += f"""
+### Agent #{i}: {agent_name}
+- **AGENT_ID**: `{agent_id}`
+- **Description**: {description}
+- **Usage**: Use agent_call tool with agent_id="{agent_id}"
+
+"""
+                    
+                    agents_info += """
+## 🔍 VERIFICATION CHECKLIST (Use this before every agent_call):
+1. ✅ Is the agent_id exactly 36 characters long?
+2. ✅ Does it contain exactly 4 hyphens in the correct positions?
+3. ✅ Have I copied it EXACTLY from the agent directory above?
+4. ✅ Did I use the FULL agent_id without any modifications?
+
+## ❌ COMMON MISTAKES TO AVOID:
+- Using partial agent_id (e.g., "16bf42b5-c9de-4fb1-85b5-36da440548" instead of "16bf42b5-c9de-4fb1-85b5-36da44058a48")
+- Removing hyphens from the UUID
+- Adding or removing characters
+- Case sensitivity errors (use lowercase)
+
+## ✅ CORRECT AGENT_CALL EXAMPLES:
+```
+agent_call(agent_id="16bf42b5-c9de-4fb1-85b5-36da44058a48", handoff_message="Please help with game design")
+```
+
+Remember: Copy the agent_id EXACTLY from the directory above. When in doubt, count the characters - it should be exactly 36.
+
+"""
+                    
+                    # DEBUG: Log the complete agents_info being added
+                    logger.info("🔍 DEBUG: COMPLETE AGENTS INFO BEING ADDED TO SYSTEM PROMPT:")
+                    logger.info(f"🔍 {agents_info}")
+                    
+                    # Add the agents info to the system prompt content
+                    system_content = working_system_prompt.get('content')
+                    
+                    if isinstance(system_content, str):
+                        working_system_prompt['content'] += agents_info
+                        logger.info(f"Added {len(agents_result.data)} available agents to string system prompt")
+                    elif isinstance(system_content, list):
+                        # Find the first text block and append to it
+                        appended = False
+                        for item in working_system_prompt['content']:
+                            if isinstance(item, dict) and item.get('type') == 'text' and 'text' in item:
+                                item['text'] += agents_info
+                                logger.info(f"Added {len(agents_result.data)} available agents to list system prompt")
+                                appended = True
+                                break
+                        if not appended:
+                            logger.warning("System prompt content is a list but no text block found to append agents info")
+                    else:
+                        logger.warning(f"System prompt content is of unexpected type ({type(system_content)}), cannot add agents info")
+                        
+        except Exception as e:
+            logger.warning(f"Failed to fetch available agents for system prompt: {e}")
+
     async def run_thread(
         self,
         thread_id: str,
@@ -252,12 +355,15 @@ class ThreadManager:
         # Create a working copy of the system prompt to potentially modify
         working_system_prompt = system_prompt.copy()
 
+        # Add available agents list to system prompt for agent_call tool
+        await self._add_available_agents_to_system_prompt(working_system_prompt, thread_id)
+
         # Add XML examples to system prompt if requested, do this only ONCE before the loop
         if include_xml_examples and config.xml_tool_calling:
             xml_examples = self.tool_registry.get_xml_examples()
             if xml_examples:
                 examples_content = """
---- XML TOOL CALLING ---
+## XML TOOL CALLING
 
 In this environment you have access to a set of tools you can use to answer the user's question. The tools are specified in XML format.
 Format your tool calls using the specified XML tags. Place parameters marked as 'attribute' within the opening tag (e.g., `<tag attribute='value'>`). Place parameters marked as 'content' between the opening and closing tags. Place parameters marked as 'element' within their own child tags (e.g., `<tag><element>value</element></tag>`). Refer to the examples provided below for the exact structure of each tool.

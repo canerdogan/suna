@@ -118,32 +118,41 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
     console.log(`[PREVIEW] Stream closed`);
   }, []);
 
-  const handleAgentCall = useCallback(async (agentName: string, message?: string) => {
-    console.log(`[PREVIEW] Agent call received for: ${agentName}`, message);
+  const handleAgentCall = useCallback(async (agentId: string, message?: string) => {
+    console.log('%c🚀 AGENT CALL CALLBACK TRIGGERED! 🚀', 'background: magenta; color: white; font-size: 16px; padding: 5px;');
+    console.log('%c🆔 [AGENT_CALL] Target Agent ID:', 'color: blue; font-size: 14px; font-weight: bold;', agentId);
+    console.log('%c💬 [AGENT_CALL] Handoff Message:', 'color: green; font-size: 14px; font-weight: bold;', message || 'No message provided');
+    
+    // Add window alert for testing
+    alert(`🚀 AGENT CALL CALLBACK! Target: ${agentId}`);
     
     if (!threadId) {
-      console.error('[PREVIEW] No thread ID available for agent call');
+      console.error('❌ [AGENT_CALL] No thread ID available for agent call');
       return;
     }
 
     try {
-      // Find the agent by name
+      // Find the agent by ID
       const { data: agentsResponse } = await queryClient.fetchQuery({
         queryKey: ['agents'],
         queryFn: () => fetch('/api/agents').then(res => res.json())
       });
       
       const targetAgent = agentsResponse?.agents?.find((agent: Agent) => 
-        agent.name.toLowerCase() === agentName.toLowerCase()
+        agent.agent_id === agentId
       );
 
       if (!targetAgent) {
-        toast.error(`Agent "${agentName}" not found`);
+        console.error('❌ [AGENT_CALL] Agent not found with ID:', agentId);
+        toast.error(`Agent with ID "${agentId}" not found`);
         return;
       }
 
+      console.log('✅ [AGENT_CALL] Target agent found:', targetAgent.name);
+
       // Add the handoff message to the conversation if provided
       if (message) {
+        console.log('📝 [AGENT_CALL] Adding handoff message to conversation');
         const handoffMessage: UnifiedMessage = {
           message_id: `handoff-${Date.now()}`,
           thread_id: threadId,
@@ -157,24 +166,29 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
         setMessages(prev => [...prev, handoffMessage]);
         
         // Save the handoff message to backend
+        console.log('💾 [AGENT_CALL] Saving handoff message to backend');
         await addUserMessageMutation.mutateAsync({
           threadId,
           message
         });
+        console.log('✅ [AGENT_CALL] Handoff message saved successfully');
       }
 
       // Start the new agent
+      console.log('🔄 [AGENT_CALL] Starting target agent:', targetAgent.agent_id);
       const agentResult = await startAgentMutation.mutateAsync({
         threadId,
         options: { agent_id: targetAgent.agent_id }
       });
+      console.log('✅ [AGENT_CALL] Agent started with run ID:', agentResult.agent_run_id);
 
       setAgentRunId(agentResult.agent_run_id);
+      console.log('🎉 [AGENT_CALL] Successfully switched to agent:', targetAgent.name);
       toast.success(`Switched to ${targetAgent.name}`);
       
     } catch (error: any) {
-      console.error('[PREVIEW] Error in agent call:', error);
-      toast.error(`Failed to switch to ${agentName}: ${error.message}`);
+      console.error('❌ [AGENT_CALL] Error in agent call:', error);
+      toast.error(`Failed to switch to agent: ${error.message}`);
     }
   }, [threadId, queryClient, addUserMessageMutation, startAgentMutation, setMessages]);
 
