@@ -64,6 +64,12 @@ export interface ChatInputProps {
   hideAgentSelection?: boolean;
   defaultShowSnackbar?: 'tokens' | 'upgrade' | false;
   showToLowCreditUsers?: boolean;
+  selectedModel?: string;
+  onModelChange?: (model: string) => void;
+  modelOptions?: any[];
+  subscriptionStatus?: any;
+  canAccessModel?: (modelId: string) => boolean;
+  refreshCustomModels?: () => void;
   thinkingEnabled?: boolean;
   onThinkingChange?: (enabled: boolean) => void;
   reasoningEffort?: string;
@@ -110,6 +116,12 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       hideAgentSelection = false,
       defaultShowSnackbar = false,
       showToLowCreditUsers = true,
+      selectedModel,
+      onModelChange,
+      modelOptions,
+      subscriptionStatus: propSubscriptionStatus,
+      canAccessModel: propCanAccessModel,
+      refreshCustomModels: propRefreshCustomModels,
       thinkingEnabled = false,
       onThinkingChange,
       reasoningEffort = 'low',
@@ -136,14 +148,22 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
     const [billingModalOpen, setBillingModalOpen] = useState(false);
 
     const {
-      selectedModel,
+      selectedModel: hookSelectedModel,
       setSelectedModel: handleModelChange,
-      subscriptionStatus,
-      allModels: modelOptions,
-      canAccessModel,
+      subscriptionStatus: hookSubscriptionStatus,
+      allModels: hookModelOptions,
+      canAccessModel: hookCanAccessModel,
       getActualModelId,
-      refreshCustomModels,
+      refreshCustomModels: hookRefreshCustomModels,
     } = useModelSelection();
+
+    // Use props if provided, otherwise fall back to hook values
+    const finalSelectedModel = selectedModel || hookSelectedModel;
+    const finalOnModelChange = onModelChange || handleModelChange;
+    const finalModelOptions = modelOptions || hookModelOptions;
+    const finalSubscriptionStatus = propSubscriptionStatus || hookSubscriptionStatus;
+    const finalCanAccessModel = propCanAccessModel || hookCanAccessModel;
+    const finalRefreshCustomModels = propRefreshCustomModels || hookRefreshCustomModels;
 
     const { data: subscriptionData } = useSubscriptionWithStreaming(isAgentRunning);
     const deleteFileMutation = useFileDelete();
@@ -154,7 +174,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
     // - For paid users, only show when they're at 70% or more of their cost limit (30% or below remaining)
     const shouldShowUsage = !isLocalMode() && subscriptionData && showToLowCreditUsers && (() => {
       // Free users: always show
-      if (subscriptionStatus === 'no_subscription') {
+      if (finalSubscriptionStatus === 'no_subscription') {
         return true;
       }
 
@@ -174,7 +194,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       } else if (!shouldShowUsage && showSnackbar !== false) {
         setShowSnackbar(false);
       }
-    }, [subscriptionData, showSnackbar, defaultShowSnackbar, shouldShowUsage, subscriptionStatus, showToLowCreditUsers, userDismissedUsage]);
+    }, [subscriptionData, showSnackbar, defaultShowSnackbar, shouldShowUsage, finalSubscriptionStatus, showToLowCreditUsers, userDismissedUsage]);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -249,7 +269,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
       }
 
-      const baseModelName = getActualModelId(selectedModel);
+      const baseModelName = getActualModelId(finalSelectedModel);
 
       onSubmit(message, {
         model_name: baseModelName,
@@ -403,12 +423,12 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                   hideAttachments={hideAttachments}
                   messages={messages}
 
-                  selectedModel={selectedModel}
-                  onModelChange={handleModelChange}
-                  modelOptions={modelOptions}
-                  subscriptionStatus={subscriptionStatus}
-                  canAccessModel={canAccessModel}
-                  refreshCustomModels={refreshCustomModels}
+                  selectedModel={finalSelectedModel}
+                  onModelChange={finalOnModelChange}
+                  modelOptions={finalModelOptions}
+                  subscriptionStatus={finalSubscriptionStatus}
+                  canAccessModel={finalCanAccessModel}
+                  refreshCustomModels={finalRefreshCustomModels}
                   isLoggedIn={isLoggedIn}
 
                   selectedAgentId={selectedAgentId}

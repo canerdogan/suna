@@ -18,65 +18,77 @@ class AgentCallTool(Tool):
         "type": "function",
         "function": {
             "name": "agent_call",
-            "description": "Call another agent to continue the conversation. Use this when you need to hand off the conversation to a different agent with specific expertise.",
+            "description": "Call another agent to continue the conversation. Use this to hand off the conversation to a different agent when their expertise is needed. The target agent will receive the conversation context and continue from where this agent left off.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "agent_name": {
+                    "agent_id": {
                         "type": "string",
-                        "description": "The name of the agent to call (e.g., 'Game Manager', 'Game Developer')"
+                        "description": "The unique ID of the agent to call. CRITICAL: Use the exact agent_id from the available agents list in the system prompt. The agent_id is case-sensitive and must be used exactly as displayed without any modifications."
                     },
-                    "message": {
+                    "handoff_message": {
                         "type": "string",
-                        "description": "Optional message to pass to the next agent"
+                        "description": "Optional message to send to the target agent explaining the context or what needs to be done."
                     }
                 },
-                "required": ["agent_name"]
+                "required": ["agent_id"]
             }
         }
     })
     @xml_schema(
         tag_name="agent-call",
         mappings=[
-            {"param_name": "agent_name", "node_type": "attribute", "path": ".", "required": True},
-            {"param_name": "message", "node_type": "element", "path": "message", "required": False}
+            {"param_name": "agent_id", "node_type": "attribute", "path": "."},
+            {"param_name": "handoff_message", "node_type": "content", "path": "."}
         ],
         example='''
         <function_calls>
         <invoke name="agent_call">
-        <parameter name="agent_name">Game Manager</parameter>
-        <parameter name="message">Please review the game design and provide feedback</parameter>
+        <parameter name="agent_id">agent_abc123</parameter>
+        <parameter name="handoff_message">I've completed the market research. Here are the findings: [research summary]. Please proceed with the game design documentation.</parameter>
         </invoke>
         </function_calls>
         '''
     )
-    async def agent_call(
-        self, 
-        agent_name: str, 
-        message: Optional[str] = None
-    ) -> ToolResult:
+    async def agent_call(self, agent_id: str, handoff_message: Optional[str] = None) -> ToolResult:
         """Call another agent to continue the conversation.
-
+        
         Args:
-            agent_name: Name of the agent to call
-            message: Optional message to pass to the next agent
-
+            agent_id: The unique ID of the agent to call (case-sensitive, must be exact)
+            handoff_message: Optional message to send to the target agent
+            
         Returns:
             ToolResult indicating the agent call was initiated
         """
-        try:
-            logger.info(f"Agent call initiated to: {agent_name}")
-            
-            # Create response data for frontend processing
-            response_data = {
+        # Validate that agent_id is provided and not empty
+        if not agent_id or not agent_id.strip():
+            logger.error("Agent call failed: agent_id is empty or missing")
+            return ToolResult(
+                output={
+                    "action": "agent_call",
+                    "error": "agent_id is required and cannot be empty",
+                    "status": "failed"
+                },
+                success=False
+            )
+        
+        # Use the agent_id exactly as provided (no modifications)
+        exact_agent_id = agent_id.strip()
+        logger.info(f"🚨 AGENT CALL TOOL EXECUTED! exact_agent_id='{exact_agent_id}', handoff_message={handoff_message}")
+        print(f"🚨 AGENT CALL TOOL EXECUTED! exact_agent_id='{exact_agent_id}', handoff_message={handoff_message}")
+        
+        # Return success - the actual agent switching happens on the frontend
+        result = ToolResult(
+            output={
                 "action": "agent_call",
-                "target_agent": agent_name,
-                "message": message or "",
-                "status": "initiated"
-            }
-            
-            return self.success_response(response_data)
-            
-        except Exception as e:
-            logger.error(f"Error in agent_call: {str(e)}")
-            return self.fail_response(f"Error calling agent: {str(e)}") 
+                "target_agent_id": exact_agent_id,
+                "message": handoff_message,
+                "status": "success"
+            },
+            success=True
+        )
+        
+        logger.info(f"🎯 AGENT CALL RESULT: {result.output}")
+        print(f"🎯 AGENT CALL RESULT: {result.output}")
+        
+        return result 

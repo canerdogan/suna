@@ -288,7 +288,7 @@ async def run_agent(
 
 
     if agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized:
-        mcp_info = "\n\n--- MCP Tools Available ---\n"
+        mcp_info = "\n\n## MCP Tools Available\n"
         mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
         mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
         mcp_info += '<function_calls>\n'
