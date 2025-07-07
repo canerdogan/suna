@@ -574,6 +574,45 @@ export default function ThreadPage({
     }
   }, [streamingToolCall, handleStreamingToolCall]);
 
+  // Handle agent selection changes - preserve model settings when switching agents
+  const handleAgentSelect = useCallback(async (agentId: string | undefined) => {
+    // Don't start agent automatically if no agentId or if agent is currently running
+    if (!agentId || agentStatus === 'running' || agentStatus === 'connecting') {
+      setSelectedAgentId(agentId);
+      return;
+    }
+
+    try {
+      console.log('%c🔄 [AGENT_SELECT] Starting selected agent with preserved settings', 'color: blue; font-weight: bold;');
+      
+      // Use current model settings to preserve user choices
+      const agentOptions = {
+        agent_id: agentId,
+        model_name: selectedModel,
+        enable_thinking: thinkingEnabled,
+        reasoning_effort: reasoningEffort,
+      };
+      
+      console.log('%c🎛️ [AGENT_SELECT] Agent options (preserving settings):', 'color: blue; font-weight: bold;', agentOptions);
+      
+      const agentResult = await startAgentMutation.mutateAsync({
+        threadId,
+        options: agentOptions
+      });
+      
+      setAgentRunId(agentResult.agent_run_id);
+      setSelectedAgentId(agentId);
+      
+      console.log('%c✅ [AGENT_SELECT] Agent started with preserved settings!', 'color: green; font-weight: bold;');
+      toast.success('Agent started with preserved settings');
+      
+    } catch (error: any) {
+      console.error('%c❌ [AGENT_SELECT] Error starting agent:', 'color: red; font-weight: bold;', error);
+      setSelectedAgentId(agentId); // Still update the selection even if start fails
+      toast.error(`Failed to start agent: ${error.message}`);
+    }
+  }, [agentStatus, selectedModel, thinkingEnabled, reasoningEffort, threadId, startAgentMutation, setAgentRunId, setSelectedAgentId]);
+
   if (!initialLoadCompleted || isLoading) {
     return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} />;
   }
@@ -706,7 +745,7 @@ export default function ThreadPage({
               messages={messages}
               agentName={agent && agent.name}
               selectedAgentId={selectedAgentId}
-              onAgentSelect={setSelectedAgentId}
+              onAgentSelect={handleAgentSelect}
               toolCalls={toolCalls}
               toolCallIndex={currentToolIndex}
               showToolPreview={!isSidePanelOpen && toolCalls.length > 0}

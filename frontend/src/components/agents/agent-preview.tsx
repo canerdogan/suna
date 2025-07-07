@@ -42,6 +42,10 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasStartedConversation, setHasStartedConversation] = useState(false);
 
+  // Model settings state for agent preview
+  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('low');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandles>(null);
   const queryClient = useQueryClient();
@@ -255,23 +259,24 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
     try {
       const files = chatInputRef.current?.getPendingFiles() || [];
 
-      const formData = new FormData();
-      formData.append('prompt', message);
-      formData.append('agent_id', agent.agent_id);
+      const agentFormData = new FormData();
+      agentFormData.append('prompt', message);
+      agentFormData.append('target_agent_id', agent.agent_id);
 
-      files.forEach((file, index) => {
+      files.forEach((file) => {
         const normalizedName = normalizeFilenameToNFC(file.name);
-        formData.append('files', file, normalizedName);
+        agentFormData.append('files', file, normalizedName);
       });
 
-      if (options?.model_name) formData.append('model_name', options.model_name);
-      formData.append('enable_thinking', String(options?.enable_thinking ?? false));
-      formData.append('reasoning_effort', options?.reasoning_effort ?? 'low');
-      formData.append('stream', String(options?.stream ?? true));
-      formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
+      // Use component state for model settings if not overridden in options
+      if (options?.model_name) agentFormData.append('model_name', options.model_name);
+      agentFormData.append('enable_thinking', String(options?.enable_thinking ?? thinkingEnabled));
+      agentFormData.append('reasoning_effort', options?.reasoning_effort ?? reasoningEffort);
+      agentFormData.append('stream', String(options?.stream ?? true));
+      agentFormData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
 
       console.log('[PREVIEW] Initiating agent...');
-      const result = await initiateAgentMutation.mutateAsync(formData);
+      const result = await initiateAgentMutation.mutateAsync(agentFormData);
       console.log('[PREVIEW] Agent initiated:', result);
 
       if (result.thread_id) {
@@ -324,13 +329,13 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
   const handleSubmitMessage = useCallback(
     async (
       message: string,
-      options?: { model_name?: string; enable_thinking?: boolean },
+      options?: { model_name?: string; enable_thinking?: boolean; reasoning_effort?: string; enable_context_manager?: boolean },
     ) => {
       if (!message.trim() || !threadId) return;
       setIsSubmitting(true);
 
       const optimisticUserMessage: UnifiedMessage = {
-        message_id: `temp-${Date.now()}`,
+        message_id: `temp-user-${Date.now()}-${Math.random()}`,
         thread_id: threadId,
         type: 'user',
         is_llm_message: false,
@@ -349,9 +354,17 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
           message
         });
 
+        // Preserve component model settings if not overridden in options
+        const finalOptions = {
+          agent_id: agent.agent_id,
+          ...options,
+          enable_thinking: options?.enable_thinking !== undefined ? options.enable_thinking : thinkingEnabled,
+          reasoning_effort: options?.reasoning_effort || reasoningEffort,
+        };
+
         const agentPromise = startAgentMutation.mutateAsync({
           threadId,
-          options
+          options: finalOptions
         });
 
         const results = await Promise.allSettled([messagePromise, agentPromise]);
@@ -359,7 +372,6 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
         if (results[0].status === 'rejected') {
           throw new Error(`Failed to send message: ${results[0].reason?.message || results[0].reason}`);
         }
-
         if (results[1].status === 'rejected') {
           const error = results[1].reason;
           if (error instanceof BillingError) {
@@ -369,19 +381,16 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
           }
           throw new Error(`Failed to start agent: ${error?.message || error}`);
         }
-
         const agentResult = results[1].value;
         setAgentRunId(agentResult.agent_run_id);
-
       } catch (err) {
-        console.error('[PREVIEW] Error sending message:', err);
         toast.error(err instanceof Error ? err.message : 'Operation failed');
-        setMessages((prev) => prev.filter((m) => m.message_id !== optimisticUserMessage.message_id));
+        setMessages((prev) => prev.filter(m => m.message_id !== optimisticUserMessage.message_id));
       } finally {
         setIsSubmitting(false);
       }
     },
-    [threadId, addUserMessageMutation, startAgentMutation],
+    [threadId, addUserMessageMutation, startAgentMutation, agent.agent_id, thinkingEnabled, reasoningEffort],
   );
 
   const handleStopAgent = useCallback(async () => {
@@ -463,6 +472,10 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
             onAgentSelect={() => {
               toast.info("You can only test the agent you are currently configuring");
             }}
+            thinkingEnabled={thinkingEnabled}
+            onThinkingChange={setThinkingEnabled}
+            reasoningEffort={reasoningEffort}
+            onReasoningEffortChange={setReasoningEffort}
           />
         </div>
       </div>
