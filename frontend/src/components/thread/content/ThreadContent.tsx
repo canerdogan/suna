@@ -896,8 +896,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         const showCursor = (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && !detectedTag;
 
                                                                         // Use renderMarkdownContent for streaming text too, to handle status messages
+                                                                        // CRITICAL FIX: Only render content BEFORE the detected XML tag to prevent incomplete XML from showing
+                                                                        const contentToRender = detectedTag ? textBeforeTag : textToRender;
                                                                         const streamingContent = renderMarkdownContent(
-                                                                            textToRender,
+                                                                            contentToRender,
                                                                             handleToolClick,
                                                                             'streaming',
                                                                             handleOpenFileViewer,
@@ -998,6 +1000,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         const textToRender = streamingText || '';
                                                                         const textBeforeTag = detectedTag ? textToRender.substring(0, tagStartIndex) : textToRender;
                                                                         const showCursor = isStreamingText && !detectedTag;
+                                                                        // CRITICAL FIX: Only render content BEFORE the detected XML tag to prevent incomplete XML from showing
+                                                                        const contentToRender = detectedTag ? textBeforeTag : textToRender;
 
                                                                         return (
                                                                             <>
@@ -1008,8 +1012,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                     </pre>
                                                                                 ) : (
                                                                                     <>
-                                                                                        {textBeforeTag && (
-                                                                                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere">{textBeforeTag}</Markdown>
+                                                                                        {contentToRender && (
+                                                                                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere">{contentToRender}</Markdown>
                                                                                         )}
                                                                                         {showCursor && (
                                                                                             <span className="inline-block h-4 w-0.5 bg-primary ml-0.5 -mb-1 animate-pulse" />
