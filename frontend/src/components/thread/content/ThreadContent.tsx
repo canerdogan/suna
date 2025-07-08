@@ -729,7 +729,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         </div>
                                                                     );
                                                                 }
-                                                                return <KortixLogo size={16} />;
+                                                                // Fallback to props agentAvatar if available
+                                                                console.log('[THREAD_CONTENT] Agent avatar fallback:', { agentAvatar, agentName, hasMessagesWithAgent: !!group.messages.find(msg => msg.type === 'assistant' && msg.agents?.avatar) });
+                                                                if (agentAvatar && typeof agentAvatar === 'string') {
+                                                                    return (
+                                                                        <div
+                                                                            className="h-4 w-5 flex items-center justify-center rounded text-xs"
+                                                                        >
+                                                                            <span className="text-lg">{agentAvatar}</span>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                // Final fallback to agentAvatar component or default logo
+                                                                return agentAvatar || <KortixLogo size={16} />;
                                                             })()}
                                                         </div>
                                                         <p className='ml-2 text-sm text-muted-foreground'>
@@ -739,6 +751,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                 );
                                                                 if (firstAssistantWithAgent?.agents?.name) {
                                                                     return firstAssistantWithAgent.agents.name;
+                                                                }
+                                                                // Fallback to props agentName if available
+                                                                console.log('[THREAD_CONTENT] Agent name fallback:', { agentName, hasMessagesWithAgentName: !!group.messages.find(msg => msg.type === 'assistant' && msg.agents?.name) });
+                                                                if (agentName && agentName !== 'Suna') {
+                                                                    return agentName;
                                                                 }
                                                                 return 'Suna';
                                                             })()}
