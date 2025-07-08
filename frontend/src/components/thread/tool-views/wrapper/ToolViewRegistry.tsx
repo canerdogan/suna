@@ -62,6 +62,8 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'see-image': SeeImageToolView,
 
+  'image_edit_or_generate': GenericToolView,
+
   'call-mcp-tool': GenericToolView,
 
   'ask': AskToolView,
