@@ -155,7 +155,34 @@ async def run_agent_background(
             logger.error(f"Error in stop signal checker for {agent_run_id}: {e}", exc_info=True)
             stop_signal_received = True # Stop the run if the checker fails
 
-    trace = langfuse.trace(name="agent_run", id=agent_run_id, session_id=thread_id, metadata={"project_id": project_id, "instance_id": instance_id})
+    # Prepare metadata for Langfuse trace
+    metadata = {
+        "project_id": project_id, 
+        "instance_id": instance_id
+    }
+    
+    # Add agent name if available
+    if agent_config and agent_config.get('name'):
+        metadata["agent_name"] = agent_config['name']
+    
+    # Add enable_thinking
+    if enable_thinking is not None:
+        metadata["enable_thinking"] = enable_thinking
+    
+    # Add reasoning effort
+    if reasoning_effort:
+        metadata["reasoning_effort"] = reasoning_effort
+    
+    # Add model name
+    if model_name:
+        metadata["model_name"] = model_name
+    
+    trace = langfuse.trace(
+        name="agent_run", 
+        id=agent_run_id, 
+        session_id=thread_id, 
+        metadata=metadata
+    )
     try:
         # Setup Pub/Sub listener for control signals
         pubsub = await redis.create_pubsub()
