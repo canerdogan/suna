@@ -7,7 +7,7 @@ export const DEFAULT_AGENTPRESS_TOOLS: Record<string, { enabled: boolean; descri
     'web_search_tool': { enabled: false, description: 'Search the web using Tavily API and scrape webpages with Firecrawl for research', icon: '🔍', color: 'bg-yellow-100 dark:bg-yellow-800/50' },
     'sb_vision_tool': { enabled: false, description: 'Vision and image processing capabilities for visual content analysis', icon: '👁️', color: 'bg-pink-100 dark:bg-pink-800/50' },
     'sb_image_edit_tool': { enabled: false, description: 'Generate and edit images using AI with OpenAI GPT Image 1 model', icon: '🎨', color: 'bg-purple-100 dark:bg-purple-800/50' },
-    'sb_google_imagen_tool': { enabled: false, description: 'Generate high-quality images using Google Imagen 4 with advanced AI capabilities', icon: '🖼️', color: 'bg-emerald-100 dark:bg-emerald-800/50' },
+    'sb_asset_generator_tool': { enabled: false, description: 'Generate high-quality visual assets and images with advanced AI capabilities', icon: '🖼️', color: 'bg-emerald-100 dark:bg-emerald-800/50' },
     'data_providers_tool': { enabled: false, description: 'Access to data providers and external APIs (requires RapidAPI key)', icon: '🔗', color: 'bg-cyan-100 dark:bg-cyan-800/50' },
 };
 
@@ -21,7 +21,7 @@ export const getToolDisplayName = (toolName: string): string => {
       'web_search_tool': 'Web Search',
       'sb_vision_tool': 'Image Processing',
       'sb_image_edit_tool': 'Image Generation',
-      'sb_google_imagen_tool': 'Google Imagen 4',
+      'sb_asset_generator_tool': 'Asset Generator',
       'data_providers_tool': 'Data Providers',
     };
     
