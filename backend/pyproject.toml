@@ -50,7 +50,7 @@ dependencies = [
   "langfuse==2.60.5",
   "Pillow>=10.4.0",
   "mcp==1.9.4",
-  "httpx==0.28.0",
+  "httpx==0.28.1",
   "aiohttp==3.12.0",
   "email-validator==2.0.0",
   "mailtrap==2.0.1",
@@ -66,6 +66,7 @@ dependencies = [
   "openpyxl==3.1.2",
   "chardet==5.2.0",
   "PyYAML==6.0.1",
+  "google-genai>=1.24.0",
 ]
 
 [project.urls]

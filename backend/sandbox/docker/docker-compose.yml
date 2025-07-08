@@ -15,6 +15,7 @@ services:
       - "8080:8080"  # HTTP server port
     environment:
       - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-false}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - CHROME_PATH=/usr/bin/google-chrome
       - CHROME_USER_DATA=/app/data/chrome_data
       - CHROME_PERSISTENT_SESSION=${CHROME_PERSISTENT_SESSION:-false}
