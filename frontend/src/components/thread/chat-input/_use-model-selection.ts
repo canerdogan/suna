@@ -7,9 +7,9 @@ import { useAvailableModels } from '@/hooks/react-query/subscriptions/use-model'
 
 export const STORAGE_KEY_MODEL = 'suna-preferred-model-v2';
 export const STORAGE_KEY_CUSTOM_MODELS = 'customModels';
-export const DEFAULT_PREMIUM_MODEL_ID = 'claude-sonnet-4';
+export const DEFAULT_PREMIUM_MODEL_ID = 'google/gemini-2.5-pro';
 // export const DEFAULT_FREE_MODEL_ID = 'deepseek';
-export const DEFAULT_FREE_MODEL_ID = 'claude-sonnet-4';
+export const DEFAULT_FREE_MODEL_ID = 'google/gemini-2.5-pro';
 
 export type SubscriptionStatus = 'no_subscription' | 'active';
 

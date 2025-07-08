@@ -246,7 +246,6 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                 onReasoningEffortChange={onReasoningEffortChange}
               />
             )}
-            {renderDropdown()}
 
             {/* Billing Modal */}
             <BillingModal

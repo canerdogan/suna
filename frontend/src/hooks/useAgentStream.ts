@@ -365,8 +365,6 @@ export function useAgentStream(
           if (functionName === 'agent_call' && toolOutput) {
             // Add a very visible console log
             console.log('%c🚨 AGENT CALL TOOL DETECTED! 🚨', 'background: red; color: white; font-size: 16px; padding: 5px;');
-            // Simple alert to be 100% sure we catch it
-            alert('🚨 AGENT CALL TOOL DETECTED!');
             console.log('%c🔄 [AGENT_CALL] Tool output received:', 'background: blue; color: white; font-weight: bold;', JSON.stringify(toolOutput, null, 2));
             
             try {
@@ -382,9 +380,6 @@ export function useAgentStream(
                 console.log('%c💬 [AGENT_CALL] Handoff Message:', 'color: green; font-weight: bold;', agentCallData.message || 'No message provided');
                 console.log('%c✅ [AGENT_CALL] Status:', 'color: orange; font-weight: bold;', agentCallData.status);
                 
-                // Add window alert for testing
-                alert(`🚨 AGENT CALL DETECTED! Target: ${agentCallData.target_agent_id}`);
-                
                 // Call the callback with target_agent_id
                 callbacks.onAgentCall?.(agentCallData.target_agent_id, agentCallData.message);
               } else {
@@ -393,11 +388,9 @@ export function useAgentStream(
                   target_agent_id: agentCallData.target_agent_id,
                   hasTargetAgentId: !!agentCallData.target_agent_id
                 });
-                alert(`⚠️ AGENT CALL - Missing fields! Action: ${agentCallData.action}, Target ID: ${agentCallData.target_agent_id}`);
               }
             } catch (error) {
               console.log('%c❌ [AGENT_CALL] Error parsing agent call tool output:', 'background: red; color: white; font-weight: bold;', error);
-              alert(`❌ AGENT CALL - Parse error: ${error.message}`);
             }
           }
           

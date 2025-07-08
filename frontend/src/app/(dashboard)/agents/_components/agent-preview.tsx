@@ -127,8 +127,6 @@ export const AgentPreview = ({ agent }: AgentPreviewProps) => {
     console.log('%c🆔 [AGENT_CALL] Target Agent ID:', 'color: blue; font-size: 14px; font-weight: bold;', agentId);
     console.log('%c💬 [AGENT_CALL] Handoff Message:', 'color: green; font-size: 14px; font-weight: bold;', message || 'No message provided');
     
-    // Add window alert for testing
-    alert(`🚀 AGENT CALL CALLBACK! Target: ${agentId}`);
     
     if (!threadId) {
       console.error('❌ [AGENT_CALL] No thread ID available for agent call');

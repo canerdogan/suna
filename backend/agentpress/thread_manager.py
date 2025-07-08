@@ -267,8 +267,7 @@ Remember: Copy the agent_id EXACTLY from the directory above. When in doubt, cou
 """
                     
                     # DEBUG: Log the complete agents_info being added
-                    logger.info("🔍 DEBUG: COMPLETE AGENTS INFO BEING ADDED TO SYSTEM PROMPT:")
-                    logger.info(f"🔍 {agents_info}")
+                    logger.info("🔍 DEBUG: COMPLETE AGENTS INFO BEING ADDED TO SYSTEM PROMPT")
                     
                     # Add the agents info to the system prompt content
                     system_content = working_system_prompt.get('content')
