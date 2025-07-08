@@ -10,6 +10,7 @@ from utils.logger import logger
 from mcp import ClientSession
 from mcp.client.sse import sse_client # type: ignore
 from mcp.client.streamable_http import streamablehttp_client # type: ignore
+from mcp.client.stdio import stdio_client, StdioServerParameters # type: ignore
 
 async def connect_streamable_http_server(url):
     async with streamablehttp_client(url) as (
@@ -117,8 +118,42 @@ async def discover_custom_tools(request_type: str, config: Dict[str, Any]):
         except Exception as e:
             logger.error(f"Error connecting to SSE MCP server: {e}")
             raise HTTPException(status_code=400, detail=f"Failed to connect to MCP server: {str(e)}")
+    
+    elif request_type == 'json':
+        if 'command' not in config:
+            raise HTTPException(status_code=400, detail="JSON configuration must include 'command' field")
+        
+        command = config['command']
+        args = config.get('args', [])
+        env = config.get('env', {})
+        
+        try:
+            async with asyncio.timeout(15):
+                server_params = StdioServerParameters(
+                    command=command,
+                    args=args,
+                    env=env
+                )
+                
+                async with stdio_client(server_params) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        tools_result = await session.list_tools()
+                        
+                        for tool in tools_result.tools:
+                            tools.append({
+                                "name": tool.name,
+                                "description": tool.description,
+                                "inputSchema": tool.inputSchema
+                            })
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=408, detail="Connection timeout - server took too long to respond")
+        except Exception as e:
+            logger.error(f"Error connecting to JSON MCP server: {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to connect to MCP server: {str(e)}")
+    
     else:
-        raise HTTPException(status_code=400, detail="Invalid server type. Must be 'http' or 'sse'")
+        raise HTTPException(status_code=400, detail="Invalid server type. Must be 'http', 'sse', or 'json'")
     
     response_data = {"tools": tools, "count": len(tools)}
     

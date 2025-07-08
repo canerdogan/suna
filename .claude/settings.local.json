@@ -9,7 +9,8 @@
       "Bash(rm:*)",
       "Bash(pnpm:*)",
       "Bash(git:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(python:*)"
     ],
     "deny": []
   }

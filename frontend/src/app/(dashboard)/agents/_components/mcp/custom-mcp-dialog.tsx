@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AlertCircle, CheckCircle2, Zap, Globe, Code, ChevronRight, Sparkles, Database, Wifi, Server } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Zap, Globe, Code, ChevronRight, Sparkles, Database, Wifi, Server, Terminal } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,7 @@ interface CustomMCPDialogProps {
 
 interface CustomMCPConfiguration {
   name: string;
-  type: 'http' | 'sse';
+  type: 'http' | 'sse' | 'json';
   config: any;
   enabledTools: string[];
   selectedProfileId?: string;
@@ -41,7 +41,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
   onSave
 }) => {
   const [step, setStep] = useState<'setup' | 'tools'>('setup');
-  const [serverType, setServerType] = useState<'http' | 'sse'>('sse');
+  const [serverType, setServerType] = useState<'http' | 'sse' | 'json'>('sse');
   const [configText, setConfigText] = useState('');
   const [serverName, setServerName] = useState('');
   const [manualServerName, setManualServerName] = useState('');
@@ -70,6 +70,22 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
         
         parsedConfig = { url };
         setServerName(manualServerName.trim());
+      } else if (serverType === 'json') {
+        if (!configText.trim()) {
+          throw new Error('Please enter the command configuration.');
+        }
+        if (!manualServerName.trim()) {
+          throw new Error('Please enter a name for this connection.');
+        }
+        try {
+          parsedConfig = JSON.parse(configText);
+          if (!parsedConfig.command) {
+            throw new Error('Command is required for JSON type.');
+          }
+        } catch (e) {
+          throw new Error('Invalid JSON configuration. Please check the format.');
+        }
+        setServerName(manualServerName.trim());
       }
 
       const supabase = createClient();
@@ -79,21 +95,26 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
         throw new Error('You must be logged in to discover tools');
       }
 
+      const requestPayload = {
+        type: serverType,
+        config: parsedConfig
+      };
+      
+      console.log('MCP Request:', requestPayload);
+      
       const response = await fetch(`${API_URL}/mcp/discover-custom-tools`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          type: serverType,
-          config: parsedConfig
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to connect to the service. Please check your configuration.');
+        console.error('MCP Error Response:', error);
+        throw new Error(error.message || error.detail || 'Failed to connect to the service. Please check your configuration.');
       }
 
       const data = await response.json();
@@ -143,7 +164,13 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
     }
 
     try {
-      let configToSave: any = { url: configText.trim() };
+      let configToSave: any;
+      
+      if (serverType === 'json') {
+        configToSave = processedConfig || JSON.parse(configText);
+      } else {
+        configToSave = { url: configText.trim() };
+      }
       
       onSave({
         name: serverName,
@@ -200,7 +227,12 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
 
   const exampleConfigs = {
     http: `https://server.example.com/mcp`,
-    sse: `https://mcp.composio.dev/partner/composio/gmail/sse?customerId=YOUR_CUSTOMER_ID`
+    sse: `https://mcp.composio.dev/partner/composio/gmail/sse?customerId=YOUR_CUSTOMER_ID`,
+    json: `{
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+  "env": {}
+}`
   };
 
   return (
@@ -208,7 +240,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
       onOpenChange(open);
       if (!open) handleReset();
     }}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -251,7 +283,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 flex flex-col">
           {step === 'setup' ? (
             <div className="space-y-6 p-1 flex-1">
               <div className="space-y-4">
@@ -259,7 +291,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
                   <Label className="text-base font-medium">How would you like to connect?</Label>
                   <RadioGroup 
                     value={serverType} 
-                    onValueChange={(value: 'http' | 'sse') => setServerType(value)}
+                    onValueChange={(value: 'http' | 'sse' | 'json') => setServerType(value)}
                     className="grid grid-cols-1 gap-3"
                   >
                     <div className={cn(
@@ -296,6 +328,23 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
                         </p>
                       </div>
                     </div>
+                    <div className={cn(
+                      "flex items-start space-x-3 p-4 rounded-lg border cursor-pointer transition-all hover:bg-muted/50",
+                      serverType === 'json' ? "border-primary bg-primary/5" : "border-border"
+                    )}>
+                      <RadioGroupItem value="json" id="json" className="mt-1" />
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Terminal className="h-4 w-4 text-primary" />
+                          <Label htmlFor="json" className="text-base font-medium cursor-pointer">
+                            JSON/Command Line
+                          </Label>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Run MCP server via command line (e.g., npx, node, python)
+                        </p>
+                      </div>
+                    </div>
                   </RadioGroup>
                 </div>
               </div>
@@ -320,9 +369,19 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
 
                 <div className="space-y-2">
                   <Label htmlFor="config" className="text-base font-medium">
-                    Connection URL
+                    {serverType === 'json' ? 'Command Configuration' : 'Connection URL'}
                   </Label>
-                  <Input
+                  {serverType === 'json' ? (
+                    <Textarea
+                      id="config"
+                      placeholder={exampleConfigs[serverType]}
+                      value={configText}
+                      onChange={(e) => setConfigText(e.target.value)}
+                      className="w-full px-4 py-3 border border-input bg-muted rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent font-mono"
+                      rows={8}
+                    />
+                  ) : (
+                    <Input
                       id="config"
                       type="url"
                       placeholder={exampleConfigs[serverType]}
@@ -330,8 +389,12 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
                       onChange={(e) => setConfigText(e.target.value)}
                       className="w-full px-4 py-3 border border-input bg-muted rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent font-mono"
                     />
+                  )}
                   <p className="text-sm text-muted-foreground">
-                    Paste the complete connection URL provided by your service
+                    {serverType === 'json' 
+                      ? 'Enter the JSON configuration with command, args, and environment variables'
+                      : 'Paste the complete connection URL provided by your service'
+                    }
                   </p>
                 </div>
               </div>

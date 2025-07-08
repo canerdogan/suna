@@ -15,7 +15,7 @@ The flow:
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, validator, HttpUrl
 import httpx
 import os
@@ -500,7 +500,7 @@ async def get_popular_mcp_servers(
     
 
 class CustomMCPDiscoverRequest(BaseModel):
-    type: str
+    type: Literal["http", "sse", "json"]
     config: Dict[str, Any]
 
 @router.post("/mcp/discover-custom-tools")
