@@ -24,8 +24,9 @@ from utils.logger import logger
 from utils.auth_utils import get_account_id_from_thread
 from services.billing import check_billing_status
 from agent.tools.sb_vision_tool import SandboxVisionTool
-from agent.tools.sb_image_edit_tool import SandboxImageEditTool
+
 from agent.tools.sb_asset_generator_tool import SandboxAssetGeneratorTool
+
 from agent.tools.agent_call_tool import AgentCallTool
 from services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
@@ -115,8 +116,8 @@ async def run_agent(
         thread_manager.add_tool(MessageTool)
         thread_manager.add_tool(SandboxWebSearchTool, project_id=project_id, thread_manager=thread_manager)
         thread_manager.add_tool(SandboxVisionTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        thread_manager.add_tool(SandboxImageEditTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        if config.GEMINI_API_KEY:
+        # Asset generator supports both Google Imagen and Eachlabs workflows
+        if config.GEMINI_API_KEY or config.EACHLABS_API_KEY:
             thread_manager.add_tool(SandboxAssetGeneratorTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
         thread_manager.add_tool(AgentCallTool)
         if config.RAPID_API_KEY:
@@ -139,9 +140,8 @@ async def run_agent(
             thread_manager.add_tool(SandboxWebSearchTool, project_id=project_id, thread_manager=thread_manager)
         if enabled_tools.get('sb_vision_tool', {}).get('enabled', False):
             thread_manager.add_tool(SandboxVisionTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        if enabled_tools.get('sb_image_edit_tool', {}).get('enabled', False):
-            thread_manager.add_tool(SandboxImageEditTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
-        if enabled_tools.get('sb_asset_generator_tool', {}).get('enabled', False) and config.GEMINI_API_KEY:
+        # Asset generator supports both Google Imagen and Eachlabs workflows
+        if enabled_tools.get('sb_asset_generator_tool', {}).get('enabled', False) and (config.GEMINI_API_KEY or config.EACHLABS_API_KEY):
             thread_manager.add_tool(SandboxAssetGeneratorTool, project_id=project_id, thread_id=thread_id, thread_manager=thread_manager)
         # Always register AgentCallTool for custom agents to enable agent-to-agent communication
         thread_manager.add_tool(AgentCallTool)

@@ -1,235 +1,345 @@
-from typing import Optional
-from agentpress.tool import ToolResult, openapi_schema, xml_schema
-from sandbox.tool_base import SandboxToolsBase
-from agentpress.thread_manager import ThreadManager
-from google import genai
-import uuid
-import base64
-from io import BytesIO
-from PIL import Image
-from utils.config import config
-from utils.logger import logger
 import os
+import base64
+import requests
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
+
+from sandbox.tool_base import SandboxToolsBase
+from utils.config import config
+from agentpress.tool import ToolResult, openapi_schema, xml_schema
 
 
 class SandboxAssetGeneratorTool(SandboxToolsBase):
-    """Tool for generating high-quality visual assets using advanced AI."""
+    """
+    Asset generator tool that supports multiple asset generation methods:
+    - AI Image generation using Google Imagen 4
+    - 2D Asset generation using Eachlabs workflows  
+    - 3D Asset generation using Eachlabs workflows
+    """
 
-    def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
+    def __init__(self, project_id: str, thread_id: str, thread_manager):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
         self.thread_manager = thread_manager
-        self.api_key = config.GEMINI_API_KEY
-        if not self.api_key:
-            logger.error("GEMINI_API_KEY not found in environment variables")
-            raise ValueError("GEMINI_API_KEY is required for visual asset generation")
+
+    @property
+    def is_available(self) -> bool:
+        """Check if the tool is available by verifying API keys"""
+        return bool(config.GEMINI_API_KEY or (config.EACHLABS_API_KEY and 
+                                               (config.EACHLABS_2D_ASSET_WORKFLOW_ID or 
+                                                config.EACHLABS_3D_ASSET_WORKFLOW_ID)))
 
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "generate_asset",
-            "description": "Generate high-quality images and visual assets from detailed text descriptions. Creates realistic and artistic images with advanced AI capabilities.",
+            "name": "generate_ai_image",
+            "description": "Generate high-quality images using AI. Perfect for creating realistic photos, artistic illustrations, logos, and visual content.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "Detailed text prompt describing the image to generate. Be specific about style, colors, composition, lighting, and other visual elements."
+                        "description": "Detailed description of the image to generate. Be specific about style, colors, composition, and details.",
                     },
                     "aspect_ratio": {
                         "type": "string",
-                        "enum": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
-                        "description": "Image aspect ratio. Options: '1:1' (square), '16:9' (horizontal), '9:16' (vertical), '4:3' (landscape), '3:4' (portrait), '3:2' (wide), '2:3' (tall). Default: '1:1'",
+                        "enum": ["1:1", "9:16", "16:9", "4:3", "3:4"],
+                        "description": "Aspect ratio for the generated image",
                         "default": "1:1"
                     },
                     "number_of_images": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 8,
-                        "description": "Number of images to generate (1-8). Default: 1",
+                        "maximum": 4,
+                        "description": "Number of images to generate (1-4)",
                         "default": 1
-                    },
-                    "person_generation": {
-                        "type": "string",
-                        "enum": ["ALLOW_ADULT", "DONT_ALLOW"],
-                        "description": "Policy for person generation. 'ALLOW_ADULT' for adult people, 'DONT_ALLOW' to avoid people. Default: 'ALLOW_ADULT'",
-                        "default": "ALLOW_ADULT"
-                    },
-                    "output_mime_type": {
-                        "type": "string",
-                        "enum": ["image/jpeg", "image/png"],
-                        "description": "Output format. 'image/jpeg' for JPEG, 'image/png' for PNG. Default: 'image/jpeg'",
-                        "default": "image/jpeg"
                     }
                 },
-                "required": ["prompt"]
-            }
-        }
+                "required": ["prompt"],
+            },
+        },
     })
     @xml_schema(
-        tag_name="generate-asset",
+        tag_name="generate-ai-image",
         mappings=[
             {"param_name": "prompt", "node_type": "attribute", "path": "."},
             {"param_name": "aspect_ratio", "node_type": "attribute", "path": "."},
-            {"param_name": "number_of_images", "node_type": "attribute", "path": "."},
-            {"param_name": "person_generation", "node_type": "attribute", "path": "."},
-            {"param_name": "output_mime_type", "node_type": "attribute", "path": "."},
+            {"param_name": "number_of_images", "node_type": "attribute", "path": "."}
         ],
-        example="""
+        example='''
         <function_calls>
-        <invoke name="generate_asset">
+        <invoke name="generate_ai_image">
         <parameter name="prompt">A beautiful sunset over a mountain landscape, golden hour lighting, photorealistic style</parameter>
         <parameter name="aspect_ratio">16:9</parameter>
         <parameter name="number_of_images">1</parameter>
-        <parameter name="person_generation">ALLOW_ADULT</parameter>
-        <parameter name="output_mime_type">image/jpeg</parameter>
         </invoke>
         </function_calls>
-        """,
+        '''
     )
-    async def generate_asset(
+    async def generate_ai_image(
         self,
         prompt: str,
-        aspect_ratio: Optional[str] = "1:1",
-        number_of_images: Optional[int] = 1,
-        person_generation: Optional[str] = "ALLOW_ADULT",
-        output_mime_type: Optional[str] = "image/jpeg"
+        aspect_ratio: str = "1:1",
+        number_of_images: int = 1
     ) -> ToolResult:
-        """
-        Generate high-quality images and visual assets.
-
-        Args:
-            prompt: Detailed description of the image to generate
-            aspect_ratio: Image aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3). Default is 1:1
-            number_of_images: Number of images to generate (1-8). Default is 1
-            person_generation: Policy for person generation (ALLOW_ADULT, DONT_ALLOW). Default is ALLOW_ADULT
-            output_mime_type: Output format (image/jpeg, image/png). Default is image/jpeg
-
-        Returns:
-            ToolResult: Generated image information including file paths and metadata
-        """
+        """Generate high-quality images using Google Imagen 4"""
         try:
-            # Validate inputs
-            if not prompt or len(prompt.strip()) == 0:
+            if not config.GEMINI_API_KEY:
                 return ToolResult(
-                    output="Error: Prompt cannot be empty",
-                    error="Invalid prompt provided"
+                    output="Error: Google AI API key not configured. Please set GEMINI_API_KEY in environment variables.",
+                    error="Google AI API key not configured"
                 )
 
-            # Validate aspect ratio
-            valid_ratios = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
-            if aspect_ratio not in valid_ratios:
-                return ToolResult(
-                    output=f"Error: Invalid aspect ratio. Must be one of: {', '.join(valid_ratios)}",
-                    error="Invalid aspect ratio"
-                )
-
-            # Validate number of images
-            if number_of_images < 1 or number_of_images > 8:
-                return ToolResult(
-                    output="Error: Number of images must be between 1 and 8",
-                    error="Invalid number of images"
-                )
-
-            # Validate person generation policy
-            valid_policies = ["ALLOW_ADULT", "DONT_ALLOW"]
-            if person_generation not in valid_policies:
-                return ToolResult(
-                    output=f"Error: Invalid person generation policy. Must be one of: {', '.join(valid_policies)}",
-                    error="Invalid person generation policy"
-                )
-
-            # Validate output format
-            valid_formats = ["image/jpeg", "image/png"]
-            if output_mime_type not in valid_formats:
-                return ToolResult(
-                    output=f"Error: Invalid output format. Must be one of: {', '.join(valid_formats)}",
-                    error="Invalid output format"
-                )
-
-            logger.info(f"Generating {number_of_images} visual asset(s) with prompt: {prompt[:100]}...")
-
-            # Initialize Google GenAI client
-            client = genai.Client(api_key=self.api_key)
-
+            from google import genai
+            
+            client = genai.Client(api_key=config.GEMINI_API_KEY)
+            
             # Generate images using Google Imagen 4
             result = client.models.generate_images(
                 model="models/imagen-4.0-generate-preview-06-06",
                 prompt=prompt,
                 config=dict(
                     number_of_images=number_of_images,
-                    output_mime_type=output_mime_type,
-                    person_generation=person_generation,
+                    output_mime_type="image/jpeg",
                     aspect_ratio=aspect_ratio,
-                ),
+                    safety_filter_level="block_only_high",
+                    person_generation="allow_adult"
+                )
             )
-
-            if not result.generated_images:
+            
+            if not result or not hasattr(result, '_result') or not result._result.images:
                 return ToolResult(
-                    output="Error: No visual assets were generated",
-                    error="Generation failed"
+                    output="Error: No images were generated. Please try a different prompt.",
+                    error="No images generated"
                 )
-
-            if len(result.generated_images) != number_of_images:
-                logger.warning(f"Expected {number_of_images} images, but got {len(result.generated_images)}")
-
-            # Process and save generated images
-            generated_files = []
-            for i, generated_image in enumerate(result.generated_images):
-                try:
-                    # Convert bytes to PIL Image
-                    image = Image.open(BytesIO(generated_image.image.image_bytes))
-                    
-                    # Generate unique filename
-                    file_extension = "jpg" if output_mime_type == "image/jpeg" else "png"
-                    filename = f"generated_asset_{uuid.uuid4().hex[:8]}_{i+1}.{file_extension}"
-                    
-                    # Save to sandbox
-                    await self._ensure_sandbox()
-                    sandbox_path = f"{self.workspace_path}/{filename}"
-                    await self.sandbox.fs.upload_file(generated_image.image.image_bytes, sandbox_path)
-                    
-                    generated_files.append({
-                        "filename": filename,
-                        "size": f"{image.width}x{image.height}",
-                        "format": output_mime_type,
-                        "aspect_ratio": aspect_ratio
-                    })
-                    
-                    logger.info(f"Generated asset {i+1} saved as {filename}")
-                    
-                except Exception as e:
-                    logger.error(f"Error processing generated asset {i+1}: {str(e)}")
-                    continue
-
-            if not generated_files:
-                return ToolResult(
-                    output="Error: Failed to process any generated assets",
-                    error="Asset processing failed"
+            
+            file_urls = []
+            for i, image in enumerate(result._result.images):
+                # Get image data as bytes
+                image_data = image._pil_image.copy()
+                
+                # Convert to bytes
+                import io
+                img_byte_arr = io.BytesIO()
+                image_data.save(img_byte_arr, format='JPEG', quality=95)
+                img_bytes = img_byte_arr.getvalue()
+                
+                # Upload to sandbox file system
+                filename = f"generated_image_{i+1}.jpg"
+                file_url = await self.sandbox.fs.upload_file(
+                    filename=filename,
+                    content=img_bytes,
+                    content_type="image/jpeg"
                 )
-
-            # Create success response using the same pattern as sb_image_edit_tool
-            if len(generated_files) == 1:
-                success_message = f"Successfully generated visual asset. Asset saved as: {generated_files[0]['filename']}. " \
-                                f"Size: {generated_files[0]['size']}, Format: {generated_files[0]['format']}, " \
-                                f"Aspect Ratio: {aspect_ratio}. You can use the ask tool to display the asset."
+                file_urls.append(file_url)
+            
+            if len(file_urls) == 1:
+                success_message = f"✅ Image generated successfully!\n\nGenerated image: {file_urls[0]}\n\nPrompt used: {prompt}"
             else:
-                files_info = ", ".join([f"{file['filename']} ({file['size']})" for file in generated_files])
-                success_message = f"Successfully generated {len(generated_files)} visual assets. " \
-                                f"Assets saved as: {files_info}. " \
-                                f"Format: {output_mime_type}, Aspect Ratio: {aspect_ratio}. " \
-                                f"You can use the ask tool to display the assets."
-
+                file_list = "\n".join([f"- {url}" for url in file_urls])
+                success_message = f"✅ {len(file_urls)} images generated successfully!\n\nGenerated images:\n{file_list}\n\nPrompt used: {prompt}"
+            
             return ToolResult(output=success_message)
-
-        except Exception as e:
-            error_msg = f"Visual asset generation failed: {str(e)}"
-            logger.error(error_msg)
+                
+        except ImportError:
             return ToolResult(
-                output=f"Error: {error_msg}",
-                error=error_msg
+                output="Error: Google AI library not installed. Please install google-genai package.",
+                error="Google AI library not installed"
+            )
+        except Exception as e:
+            return ToolResult(
+                output=f"Error generating image: {str(e)}",
+                error=f"Image generation failed: {str(e)}"
             )
 
-    def get_available_tools(self):
-        """Return list of available tools."""
-        return ["generate_asset"] 
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "generate_2d_asset",
+            "description": "Generate 2D game assets like sprites, icons, UI elements, and textures using specialized workflows.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Detailed description of the 2D asset to generate. Specify the type (icon, sprite, texture, etc.) and visual style.",
+                    },
+                    "game_style": {
+                        "type": "string",
+                        "description": "Game art style for the 2D asset",
+                        "default": "fantasy RPG"
+                    }
+                },
+                "required": ["prompt"],
+            },
+        },
+    })
+    @xml_schema(
+        tag_name="generate-2d-asset",
+        mappings=[
+            {"param_name": "prompt", "node_type": "attribute", "path": "."},
+            {"param_name": "game_style", "node_type": "attribute", "path": "."}
+        ],
+        example='''
+        <function_calls>
+        <invoke name="generate_2d_asset">
+        <parameter name="prompt">Archer character icon with bow and arrow, pixel art style</parameter>
+        <parameter name="game_style">fantasy RPG</parameter>
+        </invoke>
+        </function_calls>
+        '''
+    )
+    async def generate_2d_asset(
+        self,
+        prompt: str,
+        game_style: str = "fantasy RPG"
+    ) -> ToolResult:
+        """Generate 2D game assets using Eachlabs workflow"""
+        try:
+            if not config.EACHLABS_API_KEY:
+                return ToolResult(
+                    output="Error: Eachlabs API key not configured. Please set EACHLABS_API_KEY in environment variables.",
+                    error="Eachlabs API key not configured"
+                )
+            
+            if not config.EACHLABS_2D_ASSET_WORKFLOW_ID:
+                return ToolResult(
+                    output="Error: 2D asset workflow ID not configured. Please set EACHLABS_2D_ASSET_WORKFLOW_ID in environment variables.",
+                    error="2D asset workflow ID not configured"
+                )
+
+            parameters = {
+                "prompt": prompt,
+                "game_style": game_style
+            }
+            
+            result = await self._run_workflow(
+                workflow_id=config.EACHLABS_2D_ASSET_WORKFLOW_ID,
+                parameters=parameters
+            )
+            
+            success_message = f"✅ 2D asset generation started successfully!\n\n{result}\n\nPrompt: {prompt}\nStyle: {game_style}"
+            return ToolResult(output=success_message)
+            
+        except Exception as e:
+            return ToolResult(
+                output=f"Error generating 2D asset: {str(e)}",
+                error=f"2D asset generation failed: {str(e)}"
+            )
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "generate_3d_asset",
+            "description": "Generate 3D game assets like models, props, characters, and environments using specialized workflows.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "Detailed description of the 3D asset to generate. Specify the type (character, prop, environment, etc.) and visual style.",
+                    },
+                    "game_style": {
+                        "type": "string",
+                        "description": "Game art style for the 3D asset",
+                        "default": "fantasy RPG"
+                    }
+                },
+                "required": ["prompt"],
+            },
+        },
+    })
+    @xml_schema(
+        tag_name="generate-3d-asset",
+        mappings=[
+            {"param_name": "prompt", "node_type": "attribute", "path": "."},
+            {"param_name": "game_style", "node_type": "attribute", "path": "."}
+        ],
+        example='''
+        <function_calls>
+        <invoke name="generate_3d_asset">
+        <parameter name="prompt">Medieval castle tower with stone texture and weathered details</parameter>
+        <parameter name="game_style">fantasy RPG</parameter>
+        </invoke>
+        </function_calls>
+        '''
+    )
+    async def generate_3d_asset(
+        self,
+        prompt: str,
+        game_style: str = "fantasy RPG"
+    ) -> ToolResult:
+        """Generate 3D game assets using Eachlabs workflow"""
+        try:
+            if not config.EACHLABS_API_KEY:
+                return ToolResult(
+                    output="Error: Eachlabs API key not configured. Please set EACHLABS_API_KEY in environment variables.",
+                    error="Eachlabs API key not configured"
+                )
+            
+            if not config.EACHLABS_3D_ASSET_WORKFLOW_ID:
+                return ToolResult(
+                    output="Error: 3D asset workflow ID not configured. Please set EACHLABS_3D_ASSET_WORKFLOW_ID in environment variables.",
+                    error="3D asset workflow ID not configured"
+                )
+
+            parameters = {
+                "prompt": prompt,
+                "game_style": game_style
+            }
+            
+            result = await self._run_workflow(
+                workflow_id=config.EACHLABS_3D_ASSET_WORKFLOW_ID,
+                parameters=parameters
+            )
+            
+            success_message = f"✅ 3D asset generation started successfully!\n\n{result}\n\nPrompt: {prompt}\nStyle: {game_style}"
+            return ToolResult(output=success_message)
+            
+        except Exception as e:
+            return ToolResult(
+                output=f"Error generating 3D asset: {str(e)}",
+                error=f"3D asset generation failed: {str(e)}"
+            )
+
+    async def _run_workflow(
+        self,
+        workflow_id: str,
+        parameters: Dict[str, Any],
+        webhook_url: Optional[str] = None
+    ) -> str:
+        """Private helper method to execute Eachlabs workflows"""
+        try:
+            url = f"https://flows.eachlabs.ai/api/v1/{workflow_id}/trigger"
+            
+            headers = {
+                "X-API-KEY": config.EACHLABS_API_KEY,
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "parameters": parameters
+            }
+            
+            if webhook_url:
+                payload["webhook_url"] = webhook_url
+            else:
+                payload["webhook_url"] = ""
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    return f"Workflow executed successfully. Response: {result}"
+                except:
+                    return f"Workflow executed successfully. Response: {response.text}"
+            else:
+                return f"Workflow execution failed with status {response.status_code}: {response.text}"
+                
+        except requests.exceptions.Timeout:
+            return "Error: Request timeout. The workflow service might be busy."
+        except requests.exceptions.RequestException as e:
+            return f"Error: Network error occurred: {str(e)}"
+        except Exception as e:
+            return f"Error: Unexpected error occurred: {str(e)}" 
