@@ -177,7 +177,12 @@ class Configuration:
     OPENROUTER_API_BASE: Optional[str] = "https://openrouter.ai/api/v1"
     OR_SITE_URL: Optional[str] = "https://kortix.ai"
     OR_APP_NAME: Optional[str] = "Kortix AI"
-    GEMINI_API_KEY: Optional[str] = None    
+    GEMINI_API_KEY: Optional[str] = None
+    EACHLABS_API_KEY: Optional[str] = None
+    
+    # Eachlabs Workflow IDs
+    EACHLABS_2D_ASSET_WORKFLOW_ID: Optional[str] = None
+    EACHLABS_3D_ASSET_WORKFLOW_ID: Optional[str] = None
     
     # AWS Bedrock credentials
     AWS_ACCESS_KEY_ID: Optional[str] = None
