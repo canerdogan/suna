@@ -1,7 +1,6 @@
 import os
 import json
-import re
-from uuid import uuid4
+import asyncio
 from typing import Optional
 
 # from agent.tools.message_tool import MessageTool
@@ -578,6 +577,7 @@ async def run_agent(
                                        logger.info(f"Agent used XML tool: {xml_tool}")
                                        if trace:
                                            trace.event(name="agent_used_xml_tool", level="DEFAULT", status_message=(f"Agent used XML tool: {xml_tool}"))
+                            
                             except json.JSONDecodeError:
                                 # Handle cases where content might not be valid JSON
                                 logger.warning(f"Warning: Could not parse assistant content JSON: {chunk.get('content')}")
@@ -643,4 +643,4 @@ async def run_agent(
         if generation:
             generation.end(output=full_response)
 
-    langfuse.flush()
+    asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))

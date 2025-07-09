@@ -1,7 +1,6 @@
-import { withSentryConfig } from '@sentry/nextjs';
 import type { NextConfig } from 'next';
 
-let nextConfig: NextConfig = {
+const nextConfig: NextConfig = {
   webpack: (config) => {
     // Suppress critical dependency warnings
     config.ignoreWarnings = [
@@ -20,19 +19,7 @@ let nextConfig: NextConfig = {
 
     return config;
   },
+  productionBrowserSourceMaps: true,
 };
-
-/** Removing Sentry for now */
-if (false && process.env.NEXT_PUBLIC_VERCEL_ENV === 'production') {
-  nextConfig = withSentryConfig(nextConfig, {
-    org: 'kortix-ai',
-    project: 'suna-nextjs',
-    silent: !process.env.CI,
-    widenClientFileUpload: true,
-    tunnelRoute: '/monitoring',
-    disableLogger: true,
-    automaticVercelMonitors: true,
-  });
-}
 
 export default nextConfig;
