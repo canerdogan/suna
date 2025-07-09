@@ -54,6 +54,11 @@ export function getToolTitle(toolName: string): string {
     'execute-data-provider-call': 'Data Provider Call',
     'get-data-provider-endpoints': 'Data Endpoints',
     'deploy': 'Deploy',
+    
+    // Asset generation tools
+    'generate-asset': 'Generate Asset',
+    'generate-2d-asset': 'Generate 2D Asset',
+    'generate-3d-asset': 'Generate 3D Asset',
 
     'generic-tool': 'Tool',
     'default': 'Tool',

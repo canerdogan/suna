@@ -16,6 +16,7 @@ import { CompleteToolView } from '../CompleteToolView';
 import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
 import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
 import { DeployToolView } from '../DeployToolView';
+import { AssetGenerationToolView } from '../asset-generation/AssetGenerationToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -70,6 +71,11 @@ const defaultRegistry: ToolViewRegistryType = {
   'complete': CompleteToolView,
 
   'deploy': DeployToolView,
+
+  // Asset generation tools
+  'generate-asset': AssetGenerationToolView,
+  'generate-3d-asset': AssetGenerationToolView,
+  'generate-2d-asset': AssetGenerationToolView,
 
   'default': GenericToolView,
 };
