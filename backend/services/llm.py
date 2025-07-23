@@ -17,6 +17,7 @@ import asyncio
 from openai import OpenAIError
 import litellm
 from litellm.integrations.custom_logger import CustomLogger
+from litellm import ModelResponse
 from utils.logger import logger
 from utils.config import config
 
