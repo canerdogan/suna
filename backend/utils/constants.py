@@ -60,7 +60,7 @@ MODELS = {
     },
     
     # Paid tier only models
-    "openrouter/google/gemini-2.5-pro": {
+    "gemini/gemini-2.5-pro": {
         "aliases": ["google/gemini-2.5-pro"],
         "pricing": {
             "input_cost_per_million_tokens": 1.25,
