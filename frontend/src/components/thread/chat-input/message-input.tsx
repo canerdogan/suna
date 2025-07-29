@@ -18,6 +18,7 @@ import { BillingModal } from '@/components/billing/billing-modal';
 import ChatDropdown from './chat-dropdown';
 import { handleFiles } from './file-upload-handler';
 import { ChatSettingsDropdown } from './chat-settings-dropdown';
+import { ThinkingToggle } from './thinking-toggle';
 
 interface MessageInputProps {
   value: string;
@@ -178,23 +179,13 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                 isSunaAgent={isSunaAgent}
               />
             )}
-            {showAdvancedFeatures && !hideAgentSelection && (
-              <ChatSettingsDropdown
-                selectedAgentId={selectedAgentId}
-                onAgentSelect={onAgentSelect}
-                selectedModel={selectedModel}
-                onModelChange={onModelChange}
-                modelOptions={modelOptions}
-                subscriptionStatus={subscriptionStatus}
-                canAccessModel={canAccessModel}
-                refreshCustomModels={refreshCustomModels}
-                disabled={loading || (disabled && !isAgentRunning)}
-                thinkingEnabled={thinkingEnabled}
-                onThinkingChange={onThinkingChange}
-                reasoningEffort={reasoningEffort}
-                onReasoningEffortChange={onReasoningEffortChange}
-              />
-            )}
+            <ThinkingToggle
+              thinkingEnabled={thinkingEnabled}
+              onThinkingChange={onThinkingChange}
+              reasoningEffort={reasoningEffort}
+              onReasoningEffortChange={onReasoningEffortChange}
+              disabled={loading || (disabled && !isAgentRunning)}
+            />
             <ModelSelector
               selectedModel={selectedModel}
               onModelChange={onModelChange}
