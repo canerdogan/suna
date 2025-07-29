@@ -8,8 +8,6 @@ import { CustomMCPDialog } from './custom-mcp-dialog';
 import { PipedreamRegistry } from '@/components/agents/pipedream/pipedream-registry';
 import { ToolsManager } from './tools-manager';
 import { toast } from 'sonner';
-import { useQueryClient } from '@tanstack/react-query';
-import { agentKeys } from '@/hooks/react-query/agents/keys';
 
 export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
   configuredMCPs,
@@ -48,6 +46,12 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
 
   const handleConfigureTools = (index: number) => {
     const mcp = configuredMCPs[index];
+    console.log('[MCPConfiguration] Configure tools clicked for MCP:', {
+      index,
+      mcp,
+      enabledTools: mcp.enabledTools,
+      customType: mcp.customType
+    });
     setSelectedMCPForTools(mcp);
     if (mcp.customType === 'pipedream') {
       const profileId = mcp.selectedProfileId || mcp.config?.profile_id;
@@ -240,6 +244,14 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
           versionData={versionData}
           saveMode={saveMode}
           versionId={versionId}
+          initialEnabledTools={(() => {
+            console.log('[MCPConfiguration] Rendering Pipedream ToolsManager with:', {
+              selectedMCPForTools,
+              enabledTools: selectedMCPForTools.enabledTools,
+              profileId: selectedMCPForTools.selectedProfileId || selectedMCPForTools.config?.profile_id
+            });
+            return selectedMCPForTools.enabledTools;
+          })()}
         />
       )}
       {selectedMCPForTools && selectedMCPForTools.customType !== 'pipedream' && (
@@ -257,6 +269,14 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
           versionData={versionData}
           saveMode={saveMode}
           versionId={versionId}
+          initialEnabledTools={(() => {
+            console.log('[MCPConfiguration] Rendering Custom ToolsManager with:', {
+              selectedMCPForTools,
+              enabledTools: selectedMCPForTools.enabledTools,
+              customType: selectedMCPForTools.customType
+            });
+            return selectedMCPForTools.enabledTools;
+          })()}
         />
       )}
     </div>

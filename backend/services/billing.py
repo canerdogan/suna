@@ -497,6 +497,7 @@ async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optiona
     # Calculate current month's usage
     current_usage = await calculate_monthly_usage(client, user_id)
     
+    # TODO: also do user's AAL check
     # Check if within limits
     if current_usage >= tier_info['cost']:
         return False, f"Monthly limit of {tier_info['cost']} dollars reached. Please upgrade your plan or wait until next month.", subscription
@@ -1196,9 +1197,14 @@ async def get_available_models(
                     if '/' in model:
                         models_to_try.append(model.split('/', 1)[1])
                     
-                    # Special handling for Google models accessed via OpenRouter
-                    if model.startswith('openrouter/google/'):
-                        google_model_name = model.replace('openrouter/', '')
+                    # Special handling for Google models accessed via Google API
+                    if model.startswith('gemini/'):
+                        google_model_name = model.replace('gemini/', '')
+                        models_to_try.append(google_model_name)
+                    
+                    # Special handling for Google models accessed via Google API
+                    if model.startswith('gemini/'):
+                        google_model_name = model.replace('gemini/', '')
                         models_to_try.append(google_model_name)
                     
                     # Try each model name variation until we find one that works

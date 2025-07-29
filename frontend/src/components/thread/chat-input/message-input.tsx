@@ -56,6 +56,7 @@ interface MessageInputProps {
   onThinkingChange?: (enabled: boolean) => void;
   reasoningEffort?: string;
   onReasoningEffortChange?: (effort: string) => void;
+  isSunaAgent?: boolean;
 }
 
 export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
@@ -98,6 +99,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
       onThinkingChange,
       reasoningEffort,
       onReasoningEffortChange,
+      isSunaAgent,
     },
     ref,
   ) => {
@@ -168,7 +170,15 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
 
         return (
           <div className="flex items-center gap-2">
-            {showAdvancedFeatures && !hideAgentSelection ? (
+            {showAdvancedFeatures && !hideAgentSelection && (
+              <AgentSelector
+                selectedAgentId={selectedAgentId}
+                onAgentSelect={onAgentSelect}
+                disabled={loading || (disabled && !isAgentRunning)}
+                isSunaAgent={isSunaAgent}
+              />
+            )}
+            {showAdvancedFeatures && !hideAgentSelection && (
               <ChatSettingsDropdown
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={onAgentSelect}
@@ -184,18 +194,17 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                 reasoningEffort={reasoningEffort}
                 onReasoningEffortChange={onReasoningEffortChange}
               />
-            ) : (
-              <ModelSelector
-                selectedModel={selectedModel}
-                onModelChange={onModelChange}
-                modelOptions={modelOptions}
-                subscriptionStatus={subscriptionStatus}
-                canAccessModel={canAccessModel}
-                refreshCustomModels={refreshCustomModels}
-                billingModalOpen={billingModalOpen}
-                setBillingModalOpen={setBillingModalOpen}
-              />
             )}
+            <ModelSelector
+              selectedModel={selectedModel}
+              onModelChange={onModelChange}
+              modelOptions={modelOptions}
+              subscriptionStatus={subscriptionStatus}
+              canAccessModel={canAccessModel}
+              refreshCustomModels={refreshCustomModels}
+              billingModalOpen={billingModalOpen}
+              setBillingModalOpen={setBillingModalOpen}
+            />
           </div>
         );
       }

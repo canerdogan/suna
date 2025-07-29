@@ -19,13 +19,16 @@ import { AgentLoader } from './loader';
 import { parseXmlToolCalls, isNewXmlFormat, extractToolNameFromStream } from '@/components/thread/tool-views/xml-parser';
 import { parseToolResult } from '@/components/thread/tool-views/tool-result-parser';
 import { StatusMessage } from '@/components/thread/status-message';
+import { ShowToolStream } from './ShowToolStream';
+import { PipedreamConnectButton } from './pipedream-connect-button';
+import { PipedreamUrlDetector } from './pipedream-url-detector';
 
-// Define the set of  tags whose raw XML should be hidden during streaming
 const HIDE_STREAMING_XML_TAGS = new Set([
     'execute-command',
     'create-file',
     'delete-file',
     'full-file-rewrite',
+    'edit-file',
     'str-replace',
     'browser-click-element',
     'browser-close-tab',
@@ -169,9 +172,7 @@ export function renderMarkdownContent(
                 const textBeforeMatch = content.substring(lastIndex, match.index);
                 if (textBeforeMatch.trim()) {
                     contentParts.push(
-                        <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">
-                            {textBeforeMatch}
-                        </Markdown>
+                        <PipedreamUrlDetector key={`md-${lastIndex}`} content={textBeforeMatch} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" />
                     );
                 }
             }
@@ -222,7 +223,7 @@ export function renderMarkdownContent(
                     // Render ask tool content with attachment UI
                     contentParts.push(
                         <div key={`ask-${match.index}-${index}`} className="space-y-3">
-                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3">{askText}</Markdown>
+                            <PipedreamUrlDetector content={askText} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" />
                             {renderAttachments(attachmentArray, fileViewerHandler, sandboxId, project)}
                         </div>
                     );
@@ -238,7 +239,7 @@ export function renderMarkdownContent(
                     // Render complete tool content with attachment UI
                     contentParts.push(
                         <div key={`complete-${match.index}-${index}`} className="space-y-3">
-                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3">{completeText}</Markdown>
+                            <PipedreamUrlDetector content={completeText} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" />
                             {renderAttachments(attachmentArray, fileViewerHandler, sandboxId, project)}
                         </div>
                     );
@@ -258,7 +259,10 @@ export function renderMarkdownContent(
                     }
 
                     contentParts.push(
-                        <div key={`tool-${match.index}-${index}`} className="my-1">
+                        <div
+                            key={`tool-${match.index}-${index}`}
+                            className="my-1"
+                        >
                             <button
                                 onClick={() => handleToolClick(messageId, toolName)}
                                 className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
@@ -283,15 +287,12 @@ export function renderMarkdownContent(
             const remainingText = content.substring(lastIndex);
             if (remainingText.trim()) {
                 contentParts.push(
-                    <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">
-                        {remainingText}
-                    </Markdown>
+                    <PipedreamUrlDetector key={`md-${lastIndex}`} content={remainingText} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" />
                 );
             }
         }
 
-
-        return contentParts.length > 0 ? contentParts : <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content}</Markdown>;
+        return contentParts.length > 0 ? contentParts : <PipedreamUrlDetector content={content} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" />;
     }
 
     // Fall back to old XML format handling
@@ -302,7 +303,7 @@ export function renderMarkdownContent(
 
     // If no XML tags found, just return the full content as markdown
     if (!content.match(xmlRegex)) {
-        return <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content}</Markdown>;
+        return <PipedreamUrlDetector content={content} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" />;
     }
 
     while ((match = xmlRegex.exec(content)) !== null) {
@@ -310,7 +311,7 @@ export function renderMarkdownContent(
         if (match.index > lastIndex) {
             const textBeforeTag = content.substring(lastIndex, match.index);
             contentParts.push(
-                <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none inline-block mr-1 break-words">{textBeforeTag}</Markdown>
+                <PipedreamUrlDetector key={`md-${lastIndex}`} content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none inline-block mr-1 break-words" />
             );
         }
 
@@ -332,7 +333,7 @@ export function renderMarkdownContent(
             // Render <ask> tag content with attachment UI (using the helper)
             contentParts.push(
                 <div key={`ask-${match.index}`} className="space-y-3">
-                    <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3">{askContent}</Markdown>
+                    <PipedreamUrlDetector content={askContent} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" />
                     {renderAttachments(attachments, fileViewerHandler, sandboxId, project)}
                 </div>
             );
@@ -350,7 +351,7 @@ export function renderMarkdownContent(
             // Render <complete> tag content with attachment UI (using the helper)
             contentParts.push(
                 <div key={`complete-${match.index}`} className="space-y-3">
-                    <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3">{completeContent}</Markdown>
+                    <PipedreamUrlDetector content={completeContent} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" />
                     {renderAttachments(attachments, fileViewerHandler, sandboxId, project)}
                 </div>
             );
@@ -387,7 +388,10 @@ export function renderMarkdownContent(
 
             // Render tool button as a clickable element
             contentParts.push(
-                <div key={toolCallKey} className="my-1">
+                <div
+                    key={toolCallKey}
+                    className="my-1"
+                >
                     <button
                         onClick={() => handleToolClick(messageId, toolName)}
                         className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
@@ -407,7 +411,7 @@ export function renderMarkdownContent(
     // Add text after the last tag
     if (lastIndex < content.length) {
         contentParts.push(
-            <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content.substring(lastIndex)}</Markdown>
+            <PipedreamUrlDetector key={`md-${lastIndex}`} content={content.substring(lastIndex)} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" />
         );
     }
 
@@ -732,9 +736,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             <div key={group.key} className="flex justify-end">
                                                 <div className="flex max-w-[85%] rounded-3xl rounded-br-lg bg-card border px-4 py-3 break-words overflow-hidden">
                                                     <div className="space-y-3 min-w-0 flex-1">
-                                                        {cleanContent && (
-                                                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere">{cleanContent}</Markdown>
-                                                        )}
+                                                                                                {cleanContent && (
+                                            <PipedreamUrlDetector content={cleanContent} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                        )}
 
                                                         {/* Use the helper function to render user attachments */}
                                                         {renderAttachments(attachments as string[], handleOpenFileViewer, sandboxId, project)}
@@ -747,19 +751,30 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             <div key={group.key} ref={groupIndex === groupedMessages.length - 1 ? latestMessageRef : null}>
                                                 <div className="flex flex-col gap-2">
                                                     <div className="flex items-center">
-                                                        <div className="rounded-md flex items-center justify-center">
+                                                        <div className="rounded-md flex items-center justify-center relative">
                                                             {(() => {
                                                                 const firstAssistantWithAgent = group.messages.find(msg =>
                                                                     msg.type === 'assistant' && (msg.agents?.avatar || msg.agents?.avatar_color)
                                                                 );
+
+                                                                const isSunaAgent = firstAssistantWithAgent?.agents?.name === 'Suna';
+
                                                                 if (firstAssistantWithAgent?.agents?.avatar) {
                                                                     const avatar = firstAssistantWithAgent.agents.avatar;
                                                                     return (
-                                                                        <div
-                                                                            className="h-4 w-5 flex items-center justify-center rounded text-xs"
-                                                                        >
-                                                                            <span className="text-lg">{avatar}</span>
-                                                                        </div>
+                                                                        <>
+                                                                            {isSunaAgent ? (
+                                                                                <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
+                                                                                    <KortixLogo size={16} />
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div
+                                                                                    className="h-5 w-5 flex items-center justify-center rounded text-xs"
+                                                                                >
+                                                                                    <span className="text-lg">{avatar}</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </>
                                                                     );
                                                                 }
                                                                 // Fallback to props agentAvatar if available
@@ -809,7 +824,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                     Type: {message.type} | ID: {message.message_id || 'no-id'}
                                                                                 </div>
                                                                                 <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                    {message.content}
+                                                                                    {JSON.stringify(message.content, null, 2)}
                                                                                 </pre>
                                                                                 {message.metadata && message.metadata !== '{}' && (
                                                                                     <div className="mt-2">
@@ -817,7 +832,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                             Metadata:
                                                                                         </div>
                                                                                         <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                            {message.metadata}
+                                                                                            {JSON.stringify(message.metadata, null, 2)}
                                                                                         </pre>
                                                                                     </div>
                                                                                 )}
@@ -928,60 +943,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         return (
                                                                             <>
                                                                                 {streamingContent}
+                                                                                {textBeforeTag && (
+                                                                                    <PipedreamUrlDetector content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                                                )}
                                                                                 {showCursor && (
                                                                                     <span className="inline-block h-4 w-0.5 bg-primary ml-0.5 -mb-1 animate-pulse" />
                                                                                 )}
 
-                                                                                {detectedTag && detectedTag !== 'function_calls' && (
-                                                                                    <div className="mt-2 mb-1">
-                                                                                        <button
-                                                                                            className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
-                                                                                        >
-                                                                                            <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                                                                                                <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
-                                                                                            </div>
-                                                                                            <span className="font-mono text-xs text-primary">{getUserFriendlyToolName(detectedTag)}</span>
-                                                                                        </button>
-                                                                                    </div>
+                                                                                {detectedTag && (
+                                                                                    <ShowToolStream
+                                                                                        content={textToRender.substring(tagStartIndex)}
+                                                                                        messageId={visibleMessages && visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1].message_id : "playback-streaming"}
+                                                                                        onToolClick={handleToolClick}
+                                                                                        showExpanded={true}
+                                                                                        startTime={Date.now()}
+                                                                                    />
                                                                                 )}
 
-                                                                                {detectedTag === 'function_calls' && (
-                                                                                    <div className="mt-2 mb-1">
-                                                                                        <button
-                                                                                            className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
-                                                                                        >
-                                                                                            <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                                                                                                <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
-                                                                                            </div>
-                                                                                            <span className="font-mono text-xs text-primary">
-                                                                                                {(() => {
-                                                                                                    const extractedToolName = extractToolNameFromStream(streamingTextContent);
-                                                                                                    return extractedToolName ? getUserFriendlyToolName(extractedToolName) : 'Using Tool...';
-                                                                                                })()}
-                                                                                            </span>
-                                                                                        </button>
-                                                                                    </div>
-                                                                                )}
 
-                                                                                {streamingToolCall && !detectedTag && (
-                                                                                    <div className="mt-2 mb-1">
-                                                                                        {(() => {
-                                                                                            const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
-                                                                                            const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
-                                                                                            return (
-                                                                                                <button
-                                                                                                    className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
-                                                                                                >
-                                                                                                    <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                                                                                                        <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
-                                                                                                    </div>
-                                                                                                    <span className="font-mono text-xs text-primary">{toolName}</span>
-                                                                                                    {paramDisplay && <span className="ml-1 text-primary/70 truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                                                                                                </button>
-                                                                                            );
-                                                                                        })()}
-                                                                                    </div>
-                                                                                )}
                                                                             </>
                                                                         );
                                                                     })()}
@@ -1032,27 +1011,21 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                         {contentToRender && (
                                                                                             <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere">{contentToRender}</Markdown>
                                                                                         )}
+                                                                                        {textBeforeTag && (
+                                                                                            <PipedreamUrlDetector content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                                                        )}
                                                                                         {showCursor && (
                                                                                             <span className="inline-block h-4 w-0.5 bg-primary ml-0.5 -mb-1 animate-pulse" />
                                                                                         )}
 
                                                                                         {detectedTag && (
-                                                                                            <div className="mt-2 mb-1">
-                                                                                                <button
-                                                                                                    className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-2.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors cursor-pointer border border-primary/20"
-                                                                                                >
-                                                                                                    <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
-                                                                                                    <span className="font-mono text-xs text-primary">
-                                                                                                        {detectedTag === 'function_calls' ?
-                                                                                                            (() => {
-                                                                                                                const extractedToolName = extractToolNameFromStream(streamingText);
-                                                                                                                return extractedToolName ? getUserFriendlyToolName(extractedToolName) : 'Using Tool...';
-                                                                                                            })() :
-                                                                                                            getUserFriendlyToolName(detectedTag)
-                                                                                                        }
-                                                                                                    </span>
-                                                                                                </button>
-                                                                                            </div>
+                                                                                            <ShowToolStream
+                                                                                                content={textToRender.substring(tagStartIndex)}
+                                                                                                messageId="streamingTextContent"
+                                                                                                onToolClick={handleToolClick}
+                                                                                                showExpanded={true}
+                                                                                                startTime={Date.now()} // Tool just started now
+                                                                                            />
                                                                                         )}
                                                                                     </>
                                                                                 )}

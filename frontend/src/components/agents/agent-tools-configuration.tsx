@@ -4,28 +4,49 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DEFAULT_AGENTPRESS_TOOLS, getToolDisplayName } from './tools';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 interface AgentToolsConfigurationProps {
-  tools: Record<string, { enabled: boolean; description: string }>;
-  onToolsChange: (tools: Record<string, { enabled: boolean; description: string }>) => void;
+  tools: Record<string, boolean | { enabled: boolean; description: string }>;
+  onToolsChange: (tools: Record<string, boolean | { enabled: boolean; description: string }>) => void;
+  disabled?: boolean;
+  isSunaAgent?: boolean;
 }
 
-export const AgentToolsConfiguration = ({ tools, onToolsChange }: AgentToolsConfigurationProps) => {
+export const AgentToolsConfiguration = ({ tools, onToolsChange, disabled = false, isSunaAgent = false }: AgentToolsConfigurationProps) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  const isToolEnabled = (tool: boolean | { enabled: boolean; description: string } | undefined): boolean => {
+    if (tool === undefined) return false;
+    if (typeof tool === 'boolean') return tool;
+    return tool.enabled;
+  };
+
+  const createToolValue = (enabled: boolean, existingTool: boolean | { enabled: boolean; description: string } | undefined) => {
+    if (typeof existingTool === 'boolean' || existingTool === undefined) {
+      return enabled;
+    }
+    return { ...existingTool, enabled };
+  };
+
   const handleToolToggle = (toolName: string, enabled: boolean) => {
+    if (disabled && isSunaAgent) {
+      toast.error("Tools cannot be modified", {
+        description: "Suna's default tools are managed centrally and cannot be changed.",
+      });
+      return;
+    }
+    
     const updatedTools = {
       ...tools,
-      [toolName]: {
-        ...tools[toolName],
-        enabled
-      }
+      [toolName]: createToolValue(enabled, tools[toolName])
     };
     onToolsChange(updatedTools);
   };
 
   const getSelectedToolsCount = (): number => {
-    return Object.values(tools).filter(tool => tool.enabled).length;
+    return Object.values(tools).filter(tool => isToolEnabled(tool)).length;
   };
 
   const getFilteredTools = (): Array<[string, any]> => {
@@ -66,9 +87,10 @@ export const AgentToolsConfiguration = ({ tools, onToolsChange }: AgentToolsConf
                     {getToolDisplayName(toolName)}
                   </h4>
                   <Switch
-                    checked={tools[toolName]?.enabled || false}
+                    checked={isToolEnabled(tools[toolName])}
                     onCheckedChange={(checked) => handleToolToggle(toolName, checked)}
                     className="flex-shrink-0"
+                    disabled={disabled}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">

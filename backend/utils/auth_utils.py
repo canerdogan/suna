@@ -267,19 +267,7 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
         return None
 
 async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
-    """
-    Verify admin API key for server-side operations.
-    
-    Args:
-        x_admin_api_key: Admin API key from X-Admin-Api-Key header
-        
-    Returns:
-        bool: True if the API key is valid
-        
-    Raises:
-        HTTPException: If the API key is missing, invalid, or not configured
-    """
-    if not config.ADMIN_API_KEY:
+    if not config.KORTIX_ADMIN_API_KEY:
         raise HTTPException(
             status_code=500,
             detail="Admin API key not configured on server"
@@ -291,10 +279,39 @@ async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
             detail="Admin API key required. Include X-Admin-Api-Key header."
         )
     
-    if x_admin_api_key != config.ADMIN_API_KEY:
+    if x_admin_api_key != config.KORTIX_ADMIN_API_KEY:
         raise HTTPException(
             status_code=403,
             detail="Invalid admin API key"
         )
     
     return True
+
+async def verify_agent_access(client, agent_id: str, user_id: str) -> dict:
+    """
+    Verify that a user has access to a specific agent based on ownership.
+    
+    Args:
+        client: The Supabase client
+        agent_id: The agent ID to check access for
+        user_id: The user ID to check permissions for
+        
+    Returns:
+        dict: Agent data if access is granted
+        
+    Raises:
+        HTTPException: If the user doesn't have access to the agent or agent doesn't exist
+    """
+    try:
+        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
+        
+        if not agent_result.data:
+            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+        
+        return agent_result.data[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        structlog.error(f"Error verifying agent access for agent {agent_id}, user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to verify agent access")

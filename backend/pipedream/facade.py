@@ -234,15 +234,13 @@ class PipedreamManager:
         client = await db.client
         version_manager = VersionManagerFacade()
         
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
+        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
             return []
 
         agent = agent_result.data[0]
         
-        agent_custom_mcps = agent.get('custom_mcps', [])
         version_custom_mcps = []
-
         if agent.get('current_version_id'):
             try:
                 version_dict = await version_manager.get_version(
@@ -254,32 +252,28 @@ class PipedreamManager:
             except Exception as e:
                 pass
         
-        all_mcps = version_custom_mcps + agent_custom_mcps
-        
         pipedream_mcp = None
+        
+        print(f"[PROFILE {profile_id}] Searching for pipedream MCP. Version MCPs: {len(version_custom_mcps)}")
+        print(f"[PROFILE {profile_id}] Version custom MCPs: {version_custom_mcps}")
+        
         for mcp in version_custom_mcps:
             mcp_type = mcp.get('type')
             mcp_config = mcp.get('config', {})
             mcp_profile_id = mcp_config.get('profile_id')
+            print(f"[PROFILE {profile_id}] Version MCP: type={mcp_type}, profile_id={mcp_profile_id}, target_profile_id={profile_id}")
             
             if mcp_type == 'pipedream' and mcp_profile_id == profile_id:
                 pipedream_mcp = mcp
+                print(f"[PROFILE {profile_id}] Found matching MCP in version data: {mcp}")
                 break
 
         if not pipedream_mcp:
-            for mcp in agent_custom_mcps:
-                mcp_type = mcp.get('type')
-                mcp_config = mcp.get('config', {})
-                mcp_profile_id = mcp_config.get('profile_id')
-                
-                if mcp_type == 'pipedream' and mcp_profile_id == profile_id:
-                    pipedream_mcp = mcp
-                    break
-
-        if not pipedream_mcp:
+            print(f"[PROFILE {profile_id}] No matching pipedream MCP found!")
             return []
         
-        enabled_tools = pipedream_mcp.get('enabledTools', []) or pipedream_mcp.get('enabled_tools', [])
+        enabled_tools = pipedream_mcp.get('enabledTools', pipedream_mcp.get('enabled_tools', []))
+        print(f"[PROFILE {profile_id}] Found MCP in version data with {len(enabled_tools)} enabled tools: {enabled_tools}")
         return enabled_tools
 
     async def get_enabled_tools_for_agent_profile_version(
@@ -296,7 +290,7 @@ class PipedreamManager:
         client = await db.client
         version_manager = VersionManagerFacade()
         
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
+        agent_result = await client.table('agents').select('agent_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
             return []
 
@@ -311,19 +305,27 @@ class PipedreamManager:
             return []
         
         pipedream_mcp = None
+        
+        print(f"[VERSION {version_id}] [PROFILE {profile_id}] Searching for pipedream MCP. Version MCPs: {len(version_custom_mcps)}")
+        print(f"[VERSION {version_id}] [PROFILE {profile_id}] Version custom MCPs: {version_custom_mcps}")
+        
         for mcp in version_custom_mcps:
             mcp_type = mcp.get('type')
             mcp_config = mcp.get('config', {})
             mcp_profile_id = mcp_config.get('profile_id')
+            print(f"[VERSION {version_id}] [PROFILE {profile_id}] Version MCP: type={mcp_type}, profile_id={mcp_profile_id}, target_profile_id={profile_id}")
             
             if mcp_type == 'pipedream' and mcp_profile_id == profile_id:
                 pipedream_mcp = mcp
+                print(f"[VERSION {version_id}] [PROFILE {profile_id}] Found matching MCP in version data: {mcp}")
                 break
 
         if not pipedream_mcp:
+            print(f"[VERSION {version_id}] [PROFILE {profile_id}] No matching pipedream MCP found!")
             return []
         
-        enabled_tools = pipedream_mcp.get('enabledTools', []) or pipedream_mcp.get('enabled_tools', [])
+        enabled_tools = pipedream_mcp.get('enabledTools', pipedream_mcp.get('enabled_tools', []))
+        print(f"[VERSION {version_id}] [PROFILE {profile_id}] Found MCP with {len(enabled_tools)} enabled tools: {enabled_tools}")
         return enabled_tools
 
     async def update_agent_profile_tools(
@@ -343,7 +345,7 @@ class PipedreamManager:
         set_db_connection(db)
         client = await db.client
         
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
+        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
             raise ValueError("Agent not found")
         
@@ -369,21 +371,27 @@ class PipedreamManager:
             system_prompt = current_version_data.get('system_prompt', '')
             configured_mcps = current_version_data.get('configured_mcps', [])
             agentpress_tools = current_version_data.get('agentpress_tools', {})
-            original_custom_mcps = current_version_data.get('custom_mcps', [])
+            current_custom_mcps = current_version_data.get('custom_mcps', [])
         else:
-            system_prompt = agent.get('system_prompt', '')
-            configured_mcps = agent.get('configured_mcps', [])
-            agentpress_tools = agent.get('agentpress_tools', {})
-            original_custom_mcps = agent.get('custom_mcps', [])
+            system_prompt = ''
+            configured_mcps = []
+            agentpress_tools = {}
+            current_custom_mcps = []
         
-        agent_custom_mcps = agent.get('custom_mcps', [])
-        updated_custom_mcps = copy.deepcopy(agent_custom_mcps)
+        updated_custom_mcps = copy.deepcopy(current_custom_mcps)
+        
+        for mcp in updated_custom_mcps:
+            if 'enabled_tools' in mcp and 'enabledTools' not in mcp:
+                mcp['enabledTools'] = mcp['enabled_tools']
+            elif 'enabledTools' not in mcp and 'enabled_tools' not in mcp:
+                mcp['enabledTools'] = []
 
         found_match = False
         for mcp in updated_custom_mcps:
             if (mcp.get('type') == 'pipedream' and 
                 mcp.get('config', {}).get('profile_id') == profile_id):                
                 mcp['enabledTools'] = enabled_tools
+                mcp['enabled_tools'] = enabled_tools
                 found_match = True
                 break
         
@@ -398,12 +406,11 @@ class PipedreamManager:
                     },
                     "profile_id": profile_id
                 },
-                "enabledTools": enabled_tools
+                "enabledTools": enabled_tools,
+                "enabled_tools": enabled_tools
             }
             updated_custom_mcps.append(new_mcp_config)
         
-        
-
         new_version = await version_manager.create_version(
             agent_id=agent_id,
             user_id=user_id,
@@ -413,13 +420,13 @@ class PipedreamManager:
             agentpress_tools=agentpress_tools,
             change_description=f"Updated {profile.app_name} tools"
         )
-        try:
-            update_result = await client.table('agents').update({
-                'custom_mcps': updated_custom_mcps,
-                'current_version_id': new_version['version_id']
-            }).eq('agent_id', agent_id).execute()
-        except Exception as e:
-            pass
+        
+        update_result = await client.table('agents').update({
+            'current_version_id': new_version['version_id']
+        }).eq('agent_id', agent_id).execute()
+        
+        if not update_result.data:
+            raise ValueError("Failed to update agent configuration")
         
         return {
             'success': True,

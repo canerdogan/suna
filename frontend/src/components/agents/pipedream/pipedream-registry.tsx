@@ -243,6 +243,7 @@ export const PipedreamRegistry: React.FC<PipedreamRegistryProps> = ({
             <AgentSelector
               selectedAgentId={currentAgentId}
               onAgentSelect={handleAgentSelect}
+              isSunaAgent={agent?.metadata?.is_suna_default}
             />
           )}
         </div>
@@ -291,7 +292,7 @@ export const PipedreamRegistry: React.FC<PipedreamRegistryProps> = ({
                   </div>
                   <div>
                     <h2 className="text-md font-semibold text-foreground">
-                      {showAgentSelector && currentAgentId ? 'Connected to Agent' : 'Connected Apps'}
+                    Your Apps
                     </h2>
                   </div>
                 </div>
@@ -413,7 +414,8 @@ export const PipedreamRegistry: React.FC<PipedreamRegistryProps> = ({
             queryClient.invalidateQueries({ queryKey: ['agent', currentAgentId] });
           }}
           versionData={effectiveVersionData}
-          versionId={versionId}
+          // Don't pass versionId for existing integrations - we want current configuration
+          versionId={undefined}
         />
       )}
     </div>

@@ -14,7 +14,7 @@ import os
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
 from services import redis
-from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access
+from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access, verify_admin_api_key
 from utils.logger import logger, structlog
 from services.billing import check_billing_status, can_use_model
 from utils.config import config
@@ -28,6 +28,7 @@ from .config_helper import extract_agent_config, build_unified_config, extract_t
 from .versioning.facade import version_manager
 from .versioning.api.routes import router as version_router
 from .versioning.infrastructure.dependencies import set_db_connection
+from utils.suna_default_agent_service import SunaDefaultAgentService
 
 router = APIRouter()
 router.include_router(version_router)
@@ -111,12 +112,12 @@ class AgentResponse(BaseModel):
     created_at: str
     updated_at: Optional[str] = None
     is_public: Optional[bool] = False
-    marketplace_published_at: Optional[str] = None
-    download_count: Optional[int] = 0
+
     tags: Optional[List[str]] = []
     current_version_id: Optional[str] = None
     version_count: Optional[int] = 1
     current_version: Optional[AgentVersionResponse] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class PaginationInfo(BaseModel):
     page: int
@@ -241,8 +242,6 @@ async def stop_agent_run(agent_run_id: str, error_message: Optional[str] = None)
 
     logger.info(f"Successfully initiated stop process for agent run: {agent_run_id}")
 
-
-
 async def get_agent_run_with_access_check(client, agent_run_id: str, user_id: str):
     agent_run = await client.table('agent_runs').select('*').eq('id', agent_run_id).execute()
     if not agent_run.data:
@@ -252,8 +251,6 @@ async def get_agent_run_with_access_check(client, agent_run_id: str, user_id: st
     thread_id = agent_run_data['thread_id']
     await verify_thread_access(client, thread_id, user_id)
     return agent_run_data
-
-
 
 
 @router.post("/thread/{thread_id}/agent/start")
@@ -289,19 +286,17 @@ async def start_agent(
     client = await db.client
 
     await verify_thread_access(client, thread_id, user_id)
-    thread_result = await client.table('threads').select('project_id', 'account_id', 'agent_id', 'metadata').eq('thread_id', thread_id).execute()
+    thread_result = await client.table('threads').select('project_id', 'account_id', 'metadata').eq('thread_id', thread_id).execute()
     if not thread_result.data:
         raise HTTPException(status_code=404, detail="Thread not found")
     thread_data = thread_result.data[0]
     project_id = thread_data.get('project_id')
     account_id = thread_data.get('account_id')
-    thread_agent_id = thread_data.get('agent_id')
     thread_metadata = thread_data.get('metadata', {})
 
     structlog.contextvars.bind_contextvars(
         project_id=project_id,
         account_id=account_id,
-        thread_agent_id=thread_agent_id,
         thread_metadata=thread_metadata,
     )
     
@@ -314,11 +309,10 @@ async def start_agent(
     
     # Load agent configuration with version support
     agent_config = None
-    effective_agent_id = body.agent_id or thread_agent_id  # Use provided agent_id or the one stored in thread
+    effective_agent_id = body.agent_id  # Optional agent ID from request
     
     logger.info(f"[AGENT LOAD] Agent loading flow:")
     logger.info(f"  - body.agent_id: {body.agent_id}")
-    logger.info(f"  - thread_agent_id: {thread_agent_id}")
     logger.info(f"  - effective_agent_id: {effective_agent_id}")
     
     if effective_agent_id:
@@ -357,7 +351,7 @@ async def start_agent(
                 logger.info(f"Using agent {agent_config['name']} ({effective_agent_id}) version {agent_config.get('version_name', 'v1')}")
             else:
                 logger.info(f"Using agent {agent_config['name']} ({effective_agent_id}) - no version data")
-            source = "request" if body.agent_id else "thread"
+            source = "request" if body.agent_id else "fallback"
     else:
         logger.info(f"[AGENT LOAD] No effective_agent_id, will try default agent")
     
@@ -397,8 +391,6 @@ async def start_agent(
     logger.info(f"[AGENT LOAD] Final agent_config: {agent_config is not None}")
     if agent_config:
         logger.info(f"[AGENT LOAD] Agent config keys: {list(agent_config.keys())}")
-
-    if body.agent_id and body.agent_id != thread_agent_id and agent_config:
         logger.info(f"Using agent {agent_config['agent_id']} for this agent run (thread remains agent-agnostic)")
 
     can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
@@ -514,8 +506,8 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(get_current_us
 
 @router.get("/thread/{thread_id}/agent", response_model=ThreadAgentResponse)
 async def get_thread_agent(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
-    """Get the agent details for a specific thread. Since threads are now agent-agnostic, 
-    this returns the most recently used agent or the default agent."""
+    """Get the agent details for a specific thread. Since threads are fully agent-agnostic, 
+    this returns the most recently used agent from agent_runs only."""
     structlog.contextvars.bind_contextvars(
         thread_id=thread_id,
     )
@@ -523,21 +515,20 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(get_current_us
     client = await db.client
     
     try:
-        # Verify thread access and get thread data including agent_id
+        # Verify thread access and get thread data
         await verify_thread_access(client, thread_id, user_id)
-        thread_result = await client.table('threads').select('agent_id', 'account_id').eq('thread_id', thread_id).execute()
+        thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
         
         if not thread_result.data:
             raise HTTPException(status_code=404, detail="Thread not found")
         
         thread_data = thread_result.data[0]
-        thread_agent_id = thread_data.get('agent_id')
         account_id = thread_data.get('account_id')
         
         effective_agent_id = None
         agent_source = "none"
         
-        # First, try to get the most recently used agent from agent_runs
+        # Get the most recently used agent from agent_runs
         recent_agent_result = await client.table('agent_runs').select('agent_id', 'agent_version_id').eq('thread_id', thread_id).not_.is_('agent_id', 'null').order('created_at', desc=True).limit(1).execute()
         if recent_agent_result.data:
             effective_agent_id = recent_agent_result.data[0]['agent_id']
@@ -545,26 +536,12 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(get_current_us
             agent_source = "recent"
             logger.info(f"Found most recently used agent: {effective_agent_id} (version: {recent_version_id})")
         
-        # If no recent agent, fall back to thread default agent
-        elif thread_agent_id:
-            effective_agent_id = thread_agent_id
-            agent_source = "thread"
-            logger.info(f"Using thread default agent: {effective_agent_id}")
-        
-        # If no thread agent, try to get the default agent for the account
-        else:
-            default_agent_result = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('is_default', True).execute()
-            if default_agent_result.data:
-                effective_agent_id = default_agent_result.data[0]['agent_id']
-                agent_source = "default"
-                logger.info(f"Using account default agent: {effective_agent_id}")
-        
-        # If still no agent found
+        # If no agent found in agent_runs
         if not effective_agent_id:
             return {
                 "agent": None,
                 "source": "none",
-                "message": "No agent configured for this thread. Threads are agent-agnostic - you can select any agent."
+                "message": "No agent has been used in this thread yet. Threads are agent-agnostic - use /agent/start to select an agent."
             }
         
         # Fetch the agent details
@@ -612,19 +589,14 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(get_current_us
             except Exception as e:
                 logger.warning(f"Failed to get version data for agent {effective_agent_id}: {e}")
         
-        # Use version data if available, otherwise fall back to agent data (for backward compatibility)
-        if version_data:
-            system_prompt = version_data['system_prompt']
-            configured_mcps = version_data.get('configured_mcps', [])
-            custom_mcps = version_data.get('custom_mcps', [])
-            agentpress_tools = version_data.get('agentpress_tools', {})
-        else:
-            # Backward compatibility - use agent data directly
-            system_prompt = agent_data['system_prompt']
-            configured_mcps = agent_data.get('configured_mcps', [])
-            custom_mcps = agent_data.get('custom_mcps', [])
-            agentpress_tools = agent_data.get('agentpress_tools', {})
-            logger.info(f"Using agent {agent_data['name']} - no version data (backward compatibility)")
+        # Extract configuration using the unified config approach
+        from agent.config_helper import extract_agent_config
+        agent_config = extract_agent_config(agent_data, version_data)
+        
+        system_prompt = agent_config['system_prompt']
+        configured_mcps = agent_config['configured_mcps']
+        custom_mcps = agent_config['custom_mcps']
+        agentpress_tools = agent_config['agentpress_tools']
         
         return {
             "agent": AgentResponse(
@@ -638,16 +610,15 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(get_current_us
                 agentpress_tools=agentpress_tools,
                 is_default=agent_data.get('is_default', False),
                 is_public=agent_data.get('is_public', False),
-                marketplace_published_at=agent_data.get('marketplace_published_at'),
-                download_count=agent_data.get('download_count', 0),
                 tags=agent_data.get('tags', []),
-                avatar=agent_data.get('avatar'),
-                avatar_color=agent_data.get('avatar_color'),
+                avatar=agent_config.get('avatar'),
+                avatar_color=agent_config.get('avatar_color'),
                 created_at=agent_data['created_at'],
                 updated_at=agent_data['updated_at'],
                 current_version_id=agent_data.get('current_version_id'),
                 version_count=agent_data.get('version_count', 1),
-                current_version=current_version
+                current_version=current_version,
+                metadata=agent_data.get('metadata')
             ),
             "source": agent_source,
             "message": f"Using {agent_source} agent: {agent_data['name']}. Threads are agent-agnostic - you can change agents anytime."
@@ -1319,16 +1290,13 @@ async def get_agents(
                 tools_filter = [tool.strip() for tool in tools.split(',') if tool.strip()]
             
             for agent in agents_data:
-                # Get version data if available
+                # Get version data if available and extract configuration
                 version_data = agent_version_map.get(agent['agent_id'])
+                from agent.config_helper import extract_agent_config
+                agent_config = extract_agent_config(agent, version_data)
                 
-                # Use version data for tools if available, otherwise fallback to agent data
-                if version_data:
-                    configured_mcps = version_data.get('configured_mcps', [])
-                    agentpress_tools = version_data.get('agentpress_tools', {})
-                else:
-                    configured_mcps = agent.get('configured_mcps', [])
-                    agentpress_tools = agent.get('agentpress_tools', {})
+                configured_mcps = agent_config['configured_mcps']
+                agentpress_tools = agent_config['agentpress_tools']
                 
                 # Check MCP tools filter
                 if has_mcp_tools is not None:
@@ -1419,18 +1387,14 @@ async def get_agents(
                 except Exception as e:
                     logger.warning(f"Failed to get version data for agent {agent['agent_id']}: {e}")
             
-            # Use version data for configuration if available
-            if current_version:
-                system_prompt = current_version.system_prompt
-                configured_mcps = current_version.configured_mcps
-                custom_mcps = current_version.custom_mcps
-                agentpress_tools = current_version.agentpress_tools
-            else:
-                # Fallback to agent data if no version
-                system_prompt = agent['system_prompt']
-                configured_mcps = agent.get('configured_mcps', [])
-                custom_mcps = agent.get('custom_mcps', [])
-                agentpress_tools = agent.get('agentpress_tools', {})
+            # Extract configuration using the unified config approach
+            from agent.config_helper import extract_agent_config
+            agent_config = extract_agent_config(agent, version_dict)
+            
+            system_prompt = agent_config['system_prompt']
+            configured_mcps = agent_config['configured_mcps']
+            custom_mcps = agent_config['custom_mcps']
+            agentpress_tools = agent_config['agentpress_tools']
             
             agent_list.append(AgentResponse(
                 agent_id=agent['agent_id'],
@@ -1443,16 +1407,15 @@ async def get_agents(
                 agentpress_tools=agentpress_tools,
                 is_default=agent.get('is_default', False),
                 is_public=agent.get('is_public', False),
-                marketplace_published_at=agent.get('marketplace_published_at'),
-                download_count=agent.get('download_count', 0),
                 tags=agent.get('tags', []),
-                avatar=agent.get('avatar'),
-                avatar_color=agent.get('avatar_color'),
+                avatar=agent_config.get('avatar'),
+                avatar_color=agent_config.get('avatar_color'),
                 created_at=agent['created_at'],
                 updated_at=agent['updated_at'],
                 current_version_id=agent.get('current_version_id'),
                 version_count=agent.get('version_count', 1),
-                current_version=current_version
+                current_version=current_version,
+                metadata=agent.get('metadata')
             ))
         
         total_pages = (total_count + limit - 1) // limit
@@ -1523,18 +1486,31 @@ async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_fr
             except Exception as e:
                 logger.warning(f"Failed to get version data for agent {agent_id}: {e}")
         
-        # Use version data for configuration if available
+        # Extract configuration using the unified config approach
+        version_data = None
         if current_version:
-            system_prompt = current_version.system_prompt
-            configured_mcps = current_version.configured_mcps
-            custom_mcps = current_version.custom_mcps
-            agentpress_tools = current_version.agentpress_tools
-        else:
-            # Fallback to agent data if no version
-            system_prompt = agent_data['system_prompt']
-            configured_mcps = agent_data.get('configured_mcps', [])
-            custom_mcps = agent_data.get('custom_mcps', [])
-            agentpress_tools = agent_data.get('agentpress_tools', {})
+            version_data = {
+                'version_id': current_version.version_id,
+                'agent_id': current_version.agent_id,
+                'version_number': current_version.version_number,
+                'version_name': current_version.version_name,
+                'system_prompt': current_version.system_prompt,
+                'configured_mcps': current_version.configured_mcps,
+                'custom_mcps': current_version.custom_mcps,
+                'agentpress_tools': current_version.agentpress_tools,
+                'is_active': current_version.is_active,
+                'created_at': current_version.created_at,
+                'updated_at': current_version.updated_at,
+                'created_by': current_version.created_by
+            }
+        
+        from agent.config_helper import extract_agent_config
+        agent_config = extract_agent_config(agent_data, version_data)
+        
+        system_prompt = agent_config['system_prompt']
+        configured_mcps = agent_config['configured_mcps']
+        custom_mcps = agent_config['custom_mcps']
+        agentpress_tools = agent_config['agentpress_tools']
         
         return AgentResponse(
             agent_id=agent_data['agent_id'],
@@ -1547,16 +1523,15 @@ async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_fr
             agentpress_tools=agentpress_tools,
             is_default=agent_data.get('is_default', False),
             is_public=agent_data.get('is_public', False),
-            marketplace_published_at=agent_data.get('marketplace_published_at'),
-            download_count=agent_data.get('download_count', 0),
             tags=agent_data.get('tags', []),
-            avatar=agent_data.get('avatar'),
-            avatar_color=agent_data.get('avatar_color'),
+            avatar=agent_config.get('avatar'),
+            avatar_color=agent_config.get('avatar_color'),
             created_at=agent_data['created_at'],
             updated_at=agent_data.get('updated_at', agent_data['created_at']),
             current_version_id=agent_data.get('current_version_id'),
             version_count=agent_data.get('version_count', 1),
-            current_version=current_version
+            current_version=current_version,
+            metadata=agent_data.get('metadata')
         )
         
     except HTTPException:
@@ -1570,7 +1545,6 @@ async def create_agent(
     agent_data: AgentCreateRequest,
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
-    """Create a new agent with automatic v1 version."""
     logger.info(f"Creating new agent for user: {user_id}")
     if not await is_enabled("custom_agents"):
         raise HTTPException(
@@ -1580,34 +1554,16 @@ async def create_agent(
     client = await db.client
     
     try:
-        # If this is set as default, we need to unset other defaults first
         if agent_data.is_default:
             await client.table('agents').update({"is_default": False}).eq("account_id", user_id).eq("is_default", True).execute()
         
-        # Build unified config
-        unified_config = build_unified_config(
-            system_prompt=agent_data.system_prompt,
-            agentpress_tools=agent_data.agentpress_tools or {},
-            configured_mcps=agent_data.configured_mcps or [],
-            custom_mcps=agent_data.custom_mcps or [],
-            avatar=agent_data.avatar,
-            avatar_color=agent_data.avatar_color
-        )
-        
-        # Create the agent
         insert_data = {
             "account_id": user_id,
             "name": agent_data.name,
             "description": agent_data.description,
-            "config": unified_config,
-            # Keep legacy columns for backward compatibility
-            "system_prompt": agent_data.system_prompt, 
-            "configured_mcps": agent_data.configured_mcps or [],
-            "custom_mcps": agent_data.custom_mcps or [],
-            "agentpress_tools": agent_data.agentpress_tools or {},
-            "is_default": agent_data.is_default or False,
             "avatar": agent_data.avatar,
             "avatar_color": agent_data.avatar_color,
+            "is_default": agent_data.is_default or False,
             "version_count": 1
         }
         
@@ -1618,7 +1574,6 @@ async def create_agent(
         
         agent = new_agent.data[0]
         
-        # Create v1 version automatically using the new version manager
         try:
             version = await version_manager.create_version(
                 agent_id=agent['agent_id'],
@@ -1669,8 +1624,6 @@ async def create_agent(
             agentpress_tools=version.get('agentpress_tools', {}),
             is_default=agent.get('is_default', False),
             is_public=agent.get('is_public', False),
-            marketplace_published_at=agent.get('marketplace_published_at'),
-            download_count=agent.get('download_count', 0),
             tags=agent.get('tags', []),
             avatar=agent.get('avatar'),
             avatar_color=agent.get('avatar_color'),
@@ -1678,7 +1631,8 @@ async def create_agent(
             updated_at=agent.get('updated_at', agent['created_at']),
             current_version_id=agent.get('current_version_id'),
             version_count=agent.get('version_count', 1),
-            current_version=current_version
+            current_version=current_version,
+            metadata=agent.get('metadata')
         )
         
     except HTTPException:
@@ -1730,6 +1684,57 @@ async def update_agent(
             raise HTTPException(status_code=404, detail="Agent not found")
         
         existing_data = existing_agent.data
+
+        agent_metadata = existing_data.get('metadata', {})
+        is_suna_agent = agent_metadata.get('is_suna_default', False)
+        restrictions = agent_metadata.get('restrictions', {})
+        
+        if is_suna_agent:
+            logger.warning(f"Update attempt on Suna default agent {agent_id} by user {user_id}")
+            
+            if (agent_data.name is not None and 
+                agent_data.name != existing_data.get('name') and 
+                restrictions.get('name_editable') == False):
+                logger.error(f"User {user_id} attempted to modify restricted name of Suna agent {agent_id}")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Suna's name cannot be modified. This restriction is managed centrally."
+                )
+            
+            if (agent_data.description is not None and
+                agent_data.description != existing_data.get('description') and 
+                restrictions.get('description_editable') == False):
+                logger.error(f"User {user_id} attempted to modify restricted description of Suna agent {agent_id}")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Suna's description cannot be modified."
+                )
+            
+            if (agent_data.system_prompt is not None and 
+                restrictions.get('system_prompt_editable') == False):
+                logger.error(f"User {user_id} attempted to modify restricted system prompt of Suna agent {agent_id}")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Suna's system prompt cannot be modified. This is managed centrally to ensure optimal performance."
+                )
+            
+            if (agent_data.agentpress_tools is not None and 
+                restrictions.get('tools_editable') == False):
+                logger.error(f"User {user_id} attempted to modify restricted tools of Suna agent {agent_id}")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Suna's default tools cannot be modified. These tools are optimized for Suna's capabilities."
+                )
+            
+            if ((agent_data.configured_mcps is not None or agent_data.custom_mcps is not None) and 
+                restrictions.get('mcps_editable') == False):
+                logger.error(f"User {user_id} attempted to modify restricted MCPs of Suna agent {agent_id}")
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Suna's integrations cannot be modified."
+                )
+            
+            logger.info(f"Suna agent update validation passed for agent {agent_id} by user {user_id}")
 
         current_version_data = None
         if existing_data.get('current_version_id'):
@@ -1863,28 +1868,6 @@ async def update_agent(
         current_agentpress_tools = agent_data.agentpress_tools if agent_data.agentpress_tools is not None else current_version_data.get('agentpress_tools', {})
         current_avatar = agent_data.avatar if agent_data.avatar is not None else existing_data.get('avatar')
         current_avatar_color = agent_data.avatar_color if agent_data.avatar_color is not None else existing_data.get('avatar_color')
-        
-        unified_config = build_unified_config(
-            system_prompt=current_system_prompt,
-            agentpress_tools=current_agentpress_tools,
-            configured_mcps=current_configured_mcps,
-            custom_mcps=current_custom_mcps,
-            avatar=current_avatar,
-            avatar_color=current_avatar_color
-        )
-        update_data["config"] = unified_config
-        
-        # Also update the agent table with the latest values (for backward compatibility)
-        if agent_data.system_prompt is not None:
-            update_data["system_prompt"] = agent_data.system_prompt
-        if agent_data.configured_mcps is not None:
-            update_data["configured_mcps"] = agent_data.configured_mcps
-        if agent_data.custom_mcps is not None:
-            update_data["custom_mcps"] = agent_data.custom_mcps
-        if agent_data.agentpress_tools is not None:
-            update_data["agentpress_tools"] = agent_data.agentpress_tools
-        
-        # Create new version if needed
         new_version_id = None
         if needs_new_version:
             try:
@@ -1928,7 +1911,6 @@ async def update_agent(
         
         agent = updated_agent.data
         
-        # Use versioning system to get current version data
         current_version = None
         if agent.get('current_version_id'):
             try:
@@ -1993,18 +1975,28 @@ async def update_agent(
         except Exception as e:
             logger.warning(f"Auto-versioning failed for agent {agent_id}: {e}")
 
-        # Use version data for configuration if available
+        # Extract configuration using the unified config approach
+        version_data = None
         if current_version:
-            system_prompt = current_version.system_prompt
-            configured_mcps = current_version.configured_mcps
-            custom_mcps = current_version.custom_mcps
-            agentpress_tools = current_version.agentpress_tools
-        else:
-            # Fallback to agent data if no version
-            system_prompt = agent['system_prompt']
-            configured_mcps = agent.get('configured_mcps', [])
-            custom_mcps = agent.get('custom_mcps', [])
-            agentpress_tools = agent.get('agentpress_tools', {})
+            version_data = {
+                'version_id': current_version.version_id,
+                'agent_id': current_version.agent_id,
+                'version_number': current_version.version_number,
+                'version_name': current_version.version_name,
+                'system_prompt': current_version.system_prompt,
+                'configured_mcps': current_version.configured_mcps,
+                'custom_mcps': current_version.custom_mcps,
+                'agentpress_tools': current_version.agentpress_tools,
+                'is_active': current_version.is_active,
+            }
+        
+        from agent.config_helper import extract_agent_config
+        agent_config = extract_agent_config(agent, version_data)
+        
+        system_prompt = agent_config['system_prompt']
+        configured_mcps = agent_config['configured_mcps']
+        custom_mcps = agent_config['custom_mcps']
+        agentpress_tools = agent_config['agentpress_tools']
         
         return AgentResponse(
             agent_id=agent['agent_id'],
@@ -2017,16 +2009,15 @@ async def update_agent(
             agentpress_tools=agentpress_tools,
             is_default=agent.get('is_default', False),
             is_public=agent.get('is_public', False),
-            marketplace_published_at=agent.get('marketplace_published_at'),
-            download_count=agent.get('download_count', 0),
             tags=agent.get('tags', []),
-            avatar=agent.get('avatar'),
-            avatar_color=agent.get('avatar_color'),
+            avatar=agent_config.get('avatar'),
+            avatar_color=agent_config.get('avatar_color'),
             created_at=agent['created_at'],
             updated_at=agent.get('updated_at', agent['created_at']),
             current_version_id=agent.get('current_version_id'),
             version_count=agent.get('version_count', 1),
-            current_version=current_version
+            current_version=current_version,
+            metadata=agent.get('metadata')
         )
         
     except HTTPException:
@@ -2162,14 +2153,14 @@ async def get_pipedream_tools_for_agent(
                 user_id=user_id,
                 version_id=version
             )
-            logger.info(f"Retrieved {len(enabled_tools)} enabled tools for version {version}: {enabled_tools}")
+            logger.info(f"[VERSION {version}] Retrieved {len(enabled_tools)} enabled tools: {enabled_tools}")
         else:
             enabled_tools = await pipedream_manager.get_enabled_tools_for_agent_profile(
                 agent_id=agent_id,
                 profile_id=profile_id,
                 user_id=user_id
             )
-            logger.info(f"Retrieved {len(enabled_tools)} enabled tools for current version: {enabled_tools}")
+            logger.info(f"[CURRENT VERSION] Retrieved {len(enabled_tools)} enabled tools: {enabled_tools}")
         
         try:
             servers = await pipedream_manager.discover_mcp_servers(
@@ -2190,11 +2181,17 @@ async def get_pipedream_tools_for_agent(
             available_tools = server.available_tools
             
             formatted_tools = []
+            def tools_match(api_tool_name, stored_tool_name):
+                api_normalized = api_tool_name.lower().replace('-', '_')
+                stored_normalized = stored_tool_name.lower().replace('-', '_')
+                return api_normalized == stored_normalized
+            
             for tool in available_tools:
+                is_enabled = any(tools_match(tool.name, stored_tool) for stored_tool in enabled_tools)
                 formatted_tools.append({
                     'name': tool.name,
                     'description': tool.description or f"Tool from {profile.app_name}",
-                    'enabled': tool.name in enabled_tools
+                    'enabled': is_enabled
                 })
             
             return {
@@ -2232,9 +2229,8 @@ async def update_pipedream_tools_for_agent(
 ):
     try:
         client = await db.client
-        
         agent_row = await client.table('agents')\
-            .select('custom_mcps')\
+            .select('current_version_id')\
             .eq('agent_id', agent_id)\
             .eq('account_id', user_id)\
             .maybe_single()\
@@ -2242,7 +2238,18 @@ async def update_pipedream_tools_for_agent(
         if not agent_row.data:
             raise HTTPException(status_code=404, detail="Agent not found")
 
-        custom_mcps = agent_row.data.get('custom_mcps', []) or []
+        agent_config = {}
+        if agent_row.data.get('current_version_id'):
+            version_result = await client.table('agent_versions')\
+                .select('config')\
+                .eq('version_id', agent_row.data['current_version_id'])\
+                .maybe_single()\
+                .execute()
+            if version_result.data and version_result.data.get('config'):
+                agent_config = version_result.data['config']
+
+        tools = agent_config.get('tools', {})
+        custom_mcps = tools.get('custom_mcp', []) or []
 
         if any(mcp.get('config', {}).get('profile_id') == profile_id for mcp in custom_mcps):
             raise HTTPException(status_code=400, detail="This profile is already added to this agent")
@@ -2278,12 +2285,25 @@ async def get_custom_mcp_tools_for_agent(
     logger.info(f"Getting custom MCP tools for agent {agent_id}, user {user_id}")
     try:
         client = await db.client
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
+        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
             raise HTTPException(status_code=404, detail="Agent not found")
         
         agent = agent_result.data[0]
-        custom_mcps = agent.get('custom_mcps', [])
+        
+        # Get current version config
+        agent_config = {}
+        if agent.get('current_version_id'):
+            version_result = await client.table('agent_versions')\
+                .select('config')\
+                .eq('version_id', agent['current_version_id'])\
+                .maybe_single()\
+                .execute()
+            if version_result.data and version_result.data.get('config'):
+                agent_config = version_result.data['config']
+        
+        tools = agent_config.get('tools', {})
+        custom_mcps = tools.get('custom_mcp', [])
         
         mcp_url = request.headers.get('X-MCP-URL')
         mcp_type = request.headers.get('X-MCP-Type', 'sse')
@@ -2351,12 +2371,25 @@ async def update_custom_mcp_tools_for_agent(
     try:
         client = await db.client
         
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
+        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
             raise HTTPException(status_code=404, detail="Agent not found")
         
         agent = agent_result.data[0]
-        custom_mcps = agent.get('custom_mcps', [])
+        
+        # Get current version config
+        agent_config = {}
+        if agent.get('current_version_id'):
+            version_result = await client.table('agent_versions')\
+                .select('config')\
+                .eq('version_id', agent['current_version_id'])\
+                .maybe_single()\
+                .execute()
+            if version_result.data and version_result.data.get('config'):
+                agent_config = version_result.data['config']
+        
+        tools = agent_config.get('tools', {})
+        custom_mcps = tools.get('custom_mcp', [])
         
         mcp_url = request.get('url')
         mcp_type = request.get('type', 'sse')
@@ -2385,24 +2418,25 @@ async def update_custom_mcp_tools_for_agent(
             }
             custom_mcps.append(new_mcp_config)
         
-        update_result = await client.table('agents').update({
-            'custom_mcps': custom_mcps
-        }).eq('agent_id', agent_id).execute()
+        tools['custom_mcp'] = custom_mcps
+        agent_config['tools'] = tools
         
-        if not update_result.data:
-            raise HTTPException(status_code=500, detail="Failed to update agent")
-        
-        logger.info(f"Successfully updated {len(enabled_tools)} custom MCP tools for agent {agent_id}")
+        from agent.versioning.facade import version_manager
         try:
-            auto_version_id = await version_manager.auto_create_version_on_config_change(
+            new_version = await version_manager.create_version(
                 agent_id=agent_id,
                 user_id=user_id,
-                change_description=f"Auto-saved after updating custom MCP tools"
+                system_prompt=agent_config.get('system_prompt', ''),
+                configured_mcps=agent_config.get('tools', {}).get('mcp', []),
+                custom_mcps=custom_mcps,
+                agentpress_tools=agent_config.get('tools', {}).get('agentpress', {}),
+                version_name="Auto-updated MCP tools",
+                change_description=f"Updated custom MCP tools for {mcp_url}"
             )
-            if auto_version_id:
-                logger.info(f"Auto-created version {auto_version_id} for custom MCP tools update on agent {agent_id}")
+            logger.info(f"Created version {new_version['version_id']} for custom MCP tools update on agent {agent_id}")
         except Exception as e:
-            logger.warning(f"Auto-versioning failed for custom MCP tools update on agent {agent_id}: {e}")
+            logger.error(f"Failed to create version for custom MCP tools update: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save changes")
         
         return {
             'success': True,
@@ -2435,10 +2469,8 @@ async def get_agent_tools(
         raise HTTPException(status_code=403, detail="Access denied")
 
 
-    agentpress_tools_config = agent.get('agentpress_tools', {})
-    configured_mcps = agent.get('configured_mcps', [])
-    custom_mcps = agent.get('custom_mcps', [])
-
+    # Extract configuration using the unified config approach
+    version_data = None
     if agent.get('current_version_id'):
         try:
             version_dict = await version_manager.get_version(
@@ -2446,11 +2478,16 @@ async def get_agent_tools(
                 version_id=agent['current_version_id'],
                 user_id=user_id
             )
-            agentpress_tools_config = version_dict.get('agentpress_tools', agentpress_tools_config)
-            configured_mcps = version_dict.get('configured_mcps', configured_mcps)
-            custom_mcps = version_dict.get('custom_mcps', custom_mcps)
+            version_data = version_dict
         except Exception as e:
             logger.warning(f"Failed to fetch version data for tools endpoint: {e}")
+    
+    from agent.config_helper import extract_agent_config
+    agent_config = extract_agent_config(agent, version_data)
+    
+    agentpress_tools_config = agent_config['agentpress_tools']
+    configured_mcps = agent_config['configured_mcps'] 
+    custom_mcps = agent_config['custom_mcps']
 
     agentpress_tools = []
     for name, enabled in agentpress_tools_config.items():
@@ -2465,4 +2502,6 @@ async def get_agent_tools(
         for tool_name in enabled_tools:
             mcp_tools.append({"name": tool_name, "server": server, "enabled": True})
     return {"agentpress_tools": agentpress_tools, "mcp_tools": mcp_tools}
+
+
 
